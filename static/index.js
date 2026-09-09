@@ -1994,7 +1994,7 @@ async function loadMetrics() {
           portalKpiHtml("Network hash", hashParts.value, { unit: hashParts.unit, accent: true }),
           portalKpiHtml("Chain size", chainParts.value, { unit: chainParts.unit }),
           portalKpiHtml("Mempool tx", formatNumber(d.mempool_tx || 0)),
-          portalKpiHtml("Peers", formatNumber(d.connections || 0)),
+          portalKpiHtml("Server node peers", formatNumber(d.connections || 0)),
         ],
         "portal-kpi-strip--in-board"
       ),
