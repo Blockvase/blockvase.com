@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en" style="background-color: #0a0604;">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0a0604" />
+    <title>Blockvase Mempool</title>
+    <meta name="description" content="Live Bitcoin mempool from a connected node." />
+    <link rel="canonical" href="https://blockvase.com/mempool" />
+    <meta property="og:title" content="Blockvase Mempool" />
+    <meta property="og:description" content="Live Bitcoin mempool from a connected node." />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Blockvase" />
+    <meta property="og:url" content="https://blockvase.com/mempool" />
+    <meta property="og:image" content="https://blockvase.com/media/x-preview.png?v=4" />
+    <meta property="og:image:secure_url" content="https://blockvase.com/media/x-preview.png?v=4" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="628" />
+    <meta property="og:image:alt" content="Blockvase Block Viewer" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Blockvase Mempool" />
+    <meta name="twitter:description" content="Live Bitcoin mempool from a connected node." />
+    <meta name="twitter:image" content="https://blockvase.com/media/x-preview.png?v=4" />
+    <link rel="icon" href="/media/logo_64.png" type="image/png" />
+    <style>
+      html {
+        margin: 0;
+        min-height: 100%;
+        background-color: #0a0604;
+      }
+      body {
+        margin: 0;
+        min-height: 100%;
+        background-color: #0a0604;
+      }
+      body[data-theme="ocean"] {
+        background-color: #051420;
+      }
+      html:has(body[data-theme="ocean"]) {
+        background-color: #051420;
+      }
+      main.display-shell,
+      .display-shell,
+      .panel.live-screen,
+      #mempool-treemap {
+        background-color: #0a0604;
+      }
+      body[data-theme="ocean"] main.display-shell,
+      body[data-theme="ocean"] .display-shell,
+      body[data-theme="ocean"] .panel.live-screen,
+      body[data-theme="ocean"] #mempool-treemap {
+        background-color: #051420;
+      }
+      html[data-bw="black"],
+      html[data-bw="black"] body,
+      body[data-bw="black"],
+      html[data-bw="black"] main.display-shell,
+      html[data-bw="black"] .display-shell,
+      html[data-bw="black"] .panel.live-screen,
+      html[data-bw="black"] #mempool-treemap,
+      body[data-bw="black"] main.display-shell,
+      body[data-bw="black"] .display-shell,
+      body[data-bw="black"] .panel.live-screen,
+      body[data-bw="black"] #mempool-treemap,
+      html[data-bw="glow"],
+      html[data-bw="glow"] body,
+      body[data-bw="glow"],
+      html[data-bw="glow"] main.display-shell,
+      html[data-bw="glow"] .display-shell,
+      html[data-bw="glow"] .panel.live-screen,
+      html[data-bw="glow"] #mempool-treemap,
+      body[data-bw="glow"] main.display-shell,
+      body[data-bw="glow"] .display-shell,
+      body[data-bw="glow"] .panel.live-screen,
+      body[data-bw="glow"] #mempool-treemap {
+        background-color: #000000;
+      }
+      html[data-bw="white"],
+      html[data-bw="white"] body,
+      body[data-bw="white"],
+      html[data-bw="white"] main.display-shell,
+      html[data-bw="white"] .display-shell,
+      html[data-bw="white"] .panel.live-screen,
+      html[data-bw="white"] #mempool-treemap,
+      body[data-bw="white"] main.display-shell,
+      body[data-bw="white"] .display-shell,
+      body[data-bw="white"] .panel.live-screen,
+      body[data-bw="white"] #mempool-treemap {
+        background-color: #ffffff;
+      }
+      .hidden {
+        display: none !important;
+      }
+    </style>
+    <script>
+      try {
+        var bw = "glow";
+        try {
+          var saved = localStorage.getItem("blockvase-bw");
+          if (saved === "black" || saved === "white" || saved === "glow") bw = saved;
+        } catch (e) {}
+        document.documentElement.setAttribute("data-bw", bw);
+      } catch (e) {}
+    </script>
+    <link rel="stylesheet" href="/static/style.css?v=241" media="print" onload="this.media='all'" />
+    <noscript><link rel="stylesheet" href="/static/style.css?v=241" /></noscript>
+  </head>
+  <body class="display-page mempool-interactive" data-theme="default" style="background-color: #0a0604;">
+    <div class="portal-splash-overlay" id="portalSplashOverlay" aria-hidden="true"></div>
+    <button type="button" class="mempool-fullscreen" id="mempoolFullscreen" aria-label="Fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
+    <main class="container display-shell">
+      <section id="live-screen" class="panel live-screen mempool-screen">
+        <form id="mempoolTxSearch" class="mempool-tx-search" role="search">
+          <label class="mempool-tx-search__label" for="mempoolTxSearchInput">Search mempool</label>
+          <div class="mempool-tx-search__field">
+            <input
+              id="mempoolTxSearchInput"
+              class="mempool-tx-search__input"
+              name="q"
+              type="search"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Search by transaction id"
+              aria-label="Search mempool transactions by transaction id" />
+            <p class="mempool-tx-search__status" id="mempoolTxSearchStatus" aria-live="polite" hidden></p>
+          </div>
+        </form>
+        <div id="mempool-treemap" class="mempool-treemap">
+          <canvas id="mempool-canvas" class="mempool-canvas" aria-label="Live mempool treemap"></canvas>
+        </div>
+      </section>
+    </main>
+    <script>
+      (function () {
+        var el = document.getElementById("portalSplashOverlay") || document.querySelector(".portal-splash-overlay");
+        if (!el) return;
+        function finish() {
+          el.classList.add("portal-splash-overlay--gone");
+        }
+        function fadeOut() {
+          el.classList.add("portal-splash-overlay--hide");
+          el.addEventListener("transitionend", finish, { once: true });
+          setTimeout(finish, 600);
+        }
+        function schedule() {
+          setTimeout(fadeOut, 300);
+        }
+        if (document.readyState === "complete") schedule();
+        else window.addEventListener("load", schedule);
+      })();
+    </script>
+    <script src="/static/blockvase-api.js?v=90"></script>
+    <script src="/static/display.js?v=104"></script>
+  </body>
+</html>

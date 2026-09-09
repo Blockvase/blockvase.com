@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <title>Blockvase</title>
+    <meta name="description" content="Block Viewer for recent blocks and the live mempool, fed by a connected Bitcoin node." />
+    <link rel="canonical" href="https://blockvase.com/" />
+    <meta property="og:title" content="Blockvase" />
+    <meta property="og:description" content="Block Viewer for recent blocks and the live mempool, fed by a connected Bitcoin node." />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Blockvase" />
+    <meta property="og:url" content="https://blockvase.com/" />
+    <meta property="og:image" content="https://blockvase.com/media/x-preview.png?v=4" />
+    <meta property="og:image:secure_url" content="https://blockvase.com/media/x-preview.png?v=4" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="628" />
+    <meta property="og:image:alt" content="Blockvase Block Viewer" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Blockvase" />
+    <meta name="twitter:description" content="Block Viewer for recent blocks and the live mempool, fed by a connected Bitcoin node." />
+    <meta name="twitter:image" content="https://blockvase.com/media/x-preview.png?v=4" />
+    <meta name="twitter:image:alt" content="Blockvase Block Viewer" />
+    <link rel="icon" href="/media/logo_64.png" type="image/png" />
+    <link rel="stylesheet" href="/static/style.css?v=243" />
+    <script>
+      try {
+        var bw = "glow";
+        try {
+          var saved = localStorage.getItem("blockvase-bw");
+          if (saved === "black" || saved === "white" || saved === "glow") bw = saved;
+        } catch (e) {}
+        document.documentElement.setAttribute("data-bw", bw);
+      } catch (e) {}
+    </script>
+    <script type="module" src="/static/vendor/model-viewer.min.js?v=2"></script>
+  </head>
+  <body class="portal-page" data-theme="default">
+    <div class="portal-splash-overlay" id="portalSplashOverlay" aria-hidden="true"></div>
+    <div class="container">
+      <header>
+        <div class="header-left">
+          <img class="logo" src="/media/logo_200.png" alt="Blockvase" />
+          <h1 id="deviceNameHeader"></h1>
+        </div>
+        <div class="header-right">
+          <button type="button" class="bw-mode-toggle" id="bwModeToggle" aria-label="Switch to black mode" title="Switch to black mode">
+            <span class="bw-mode-toggle__fill" aria-hidden="true"></span>
+          </button>
+          <button type="button" class="btn secondary portal-header-nav" id="blockvaseAccountButton">Sign in</button>
+          <button type="button" class="btn secondary portal-header-nav" id="blockvaseAffiliatesButton" hidden>Affiliates</button>
+          <button type="button" class="btn secondary portal-header-nav" id="blockvaseAdminButton" hidden>Admin</button>
+          <button type="button" class="btn-icon portal-fullscreen" id="portalFullscreen" aria-label="Fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
+        </div>
+      </header>
+      <nav class="portal-tab-nav" aria-label="Blockvase portal sections" role="tablist">
+        <button type="button" class="portal-tab-button is-active" role="tab" data-portal-tab="viewer" aria-controls="blockViewerTab" aria-selected="true">Viewer</button>
+        <button type="button" class="portal-tab-button" role="tab" data-portal-tab="pool" aria-controls="poolTab" aria-selected="false">Pool</button>
+        <button type="button" class="portal-tab-button" role="tab" data-portal-tab="shop" aria-controls="shopTab" aria-selected="false" disabled aria-disabled="true" title="Shop is temporarily unavailable">Shop</button>
+        <button type="button" class="portal-tab-button" role="tab" data-portal-tab="resources" aria-controls="resourcesTab" aria-selected="false">Resources</button>
+      </nav>
+
+      <section id="blockViewerTab" class="portal-tab-panel is-active" data-portal-panel="viewer" role="tabpanel">
+        <div id="metrics">
+          <p class="metric-board-asof viewer-tab-asof" id="viewerTabAsOf" hidden></p>
+          <section class="block-carousel metric-board metric-board--dense" id="blockCarousel" aria-label="Recent blocks">
+            <div id="metricsGrid"><div class="loading pulse">Loading data...</div></div>
+            <div id="blockCarouselRetarget" class="block-carousel-retarget"></div>
+            <div class="block-carousel__track" id="blockCarouselTrack" role="list"></div>
+            <div id="blockCarouselShare" class="block-carousel-share"></div>
+          </section>
+          <div class="display-preview metric-board metric-board--dense" aria-label="Live mempool">
+            <form id="mempoolTxSearch" class="mempool-tx-search display-preview-search" role="search">
+              <label class="mempool-tx-search__label" for="mempoolTxSearchInput">Search block viewer</label>
+              <div class="mempool-tx-search__field">
+                <input
+                  id="mempoolTxSearchInput"
+                  class="mempool-tx-search__input"
+                  name="q"
+                  type="search"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="Full transaction id or block number"
+                  aria-label="Search by full transaction id or block number" />
+                <p class="mempool-tx-search__status" id="mempoolTxSearchStatus" aria-live="polite" hidden></p>
+              </div>
+              <button type="button" class="btn-icon display-open-full" id="displayOpenFull" aria-label="Open mempool in new tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></button>
+            </form>
+            <div class="display-iframe-wrapper" id="displayIframeWrapper">
+              <iframe class="display-iframe" id="displayIframe" data-src="/mempool?embed=1&v=104" title="Live mempool treemap" loading="lazy"></iframe>
+            </div>
+            <div id="tx-detail-panel" class="tx-detail-panel" aria-hidden="true">
+              <button type="button" class="btn-icon tx-detail-fullscreen" id="txDetailFullscreen" aria-label="Fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
+              <button type="button" class="btn-icon tx-detail-close" aria-label="Close transaction detail"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+              <div class="tx-detail-header">
+                <span class="tx-detail-status" id="tx-detail-status"></span>
+                <div class="tx-detail-txid-wrap">
+                  <span class="tx-detail-txid-label">Transaction ID</span>
+                  <span class="tx-detail-txid portal-kpi-value--mono" id="tx-detail-txid"></span>
+                </div>
+              </div>
+              <div class="tx-detail-body">
+                <div
+                  class="tx-detail-loading-overlay"
+                  id="txDetailLoading"
+                  hidden
+                  aria-hidden="true"
+                  aria-busy="false"
+                  role="status"
+                  aria-live="polite"
+                  aria-label="Loading">
+                  <span class="tx-detail-loading-overlay__spinner" aria-hidden="true"></span>
+                </div>
+                <div id="tx-graph" class="tx-flow-view" tabindex="0" aria-label="Transaction flow"></div>
+                <div class="tx-table-copy-toast" id="txTableCopyToast" aria-live="polite" hidden></div>
+              </div>
+            </div>
+          </div>
+          <div id="metricsBeforeMempool"></div>
+          <div id="metricsUpperDetail"></div>
+        </div>
+      </section>
+
+      <section id="poolTab" class="portal-tab-panel" data-portal-panel="pool" role="tabpanel" hidden>
+        <div id="datumPoolBoard" class="datum-pool"></div>
+      </section>
+
+      <section id="shopTab" class="portal-tab-panel" data-portal-panel="shop" role="tabpanel">
+        <div class="portal-product-model metric-board metric-board--dense" aria-label="Interactive Blockvase 3D model">
+          <div
+            class="portal-model-loading"
+            id="blockvaseModelLoading"
+            role="status"
+            aria-live="polite"
+            aria-busy="true"
+            aria-label="Loading">
+            <span class="portal-model-loading__spinner" aria-hidden="true"></span>
+          </div>
+          <model-viewer
+            id="blockvaseProductModel"
+            src="/models/blockvase.glb?v=26"
+                  camera-controls
+                  touch-action="pan-y"
+                  interaction-prompt="none"
+                  shadow-intensity="0.85"
+                  shadow-softness="0.8"
+                  exposure="0.95"
+                  environment-image="neutral"
+                  camera-orbit="35deg 52deg 13.5m"
+                  camera-target="0m 0m 0m"
+                  field-of-view="32deg"
+                  min-camera-orbit="auto 40deg 3m"
+                  max-camera-orbit="auto 85deg 12m"
+                  alt="Interactive shaded 3D model of the Blockvase device">
+                  <button class="dot" slot="hotspot-ext-w0"></button>
+                  <button class="dot" slot="hotspot-dim-w0"></button>
+                  <button class="dim" slot="hotspot-dim-w">3.7 in</button>
+                  <button class="dot" slot="hotspot-dim-w1"></button>
+                  <button class="dot" slot="hotspot-ext-w1"></button>
+        
+                  <button class="dot" slot="hotspot-ext-h0"></button>
+                  <button class="dot" slot="hotspot-dim-h0"></button>
+                  <button class="dim" slot="hotspot-dim-h">3.7 in</button>
+                  <button class="dot" slot="hotspot-dim-h1"></button>
+                  <button class="dot" slot="hotspot-ext-h1"></button>
+        
+                  <button class="dot" slot="hotspot-ext-d0"></button>
+                  <button class="dot" slot="hotspot-dim-d0"></button>
+                  <button class="dim" slot="hotspot-dim-d">3.7 in</button>
+                  <button class="dot" slot="hotspot-dim-d1"></button>
+                  <button class="dot" slot="hotspot-ext-d1"></button>
+        
+                </model-viewer>
+                <svg id="blockvaseDimLines" class="portal-dim-lines" aria-hidden="true">
+                  <line class="dimensionLine" data-dim="w-ext0"></line>
+                  <line class="dimensionLine" data-dim="w-tick0"></line>
+                  <line class="dimensionLine" data-dim="w"></line>
+                  <line class="dimensionLine" data-dim="w-tick1"></line>
+                  <line class="dimensionLine" data-dim="w-ext1"></line>
+        
+                  <line class="dimensionLine" data-dim="h-ext0"></line>
+                  <line class="dimensionLine" data-dim="h-tick0"></line>
+                  <line class="dimensionLine" data-dim="h"></line>
+                  <line class="dimensionLine" data-dim="h-tick1"></line>
+                  <line class="dimensionLine" data-dim="h-ext1"></line>
+        
+                  <line class="dimensionLine" data-dim="d-ext0"></line>
+                  <line class="dimensionLine" data-dim="d-tick0"></line>
+                  <line class="dimensionLine" data-dim="d"></line>
+                  <line class="dimensionLine" data-dim="d-tick1"></line>
+                  <line class="dimensionLine" data-dim="d-ext1"></line>
+                </svg>
+        </div>
+
+        <div class="portal-shop-card metric-board metric-board--dense" id="blockvaseCheckout">
+          <div class="portal-shop-card__body">
+            <div class="portal-shop-brand">
+              <img class="portal-shop-brand__logo" src="/media/logo_200.png" alt="" />
+              <h2 class="portal-shop-brand__title">Blockvase</h2>
+            </div>
+            <p class="portal-overline">Full Bitcoin Knots Node, DATUM Gateway &amp; ASIC Miner</p>
+            <p class="muted-note">
+              Blockvase is an all-in-one device for the sovereign bitcoiner. It gives you a full Bitcoin Knots node with true solo mining, enabled by a local DATUM gateway and a built-in BM1366 Bitcoin mining ASIC chip all within one visually stunning, petite, white and copper cube.
+            </p>
+            <p class="muted-note portal-shop-copy-secondary">
+              While the node catches up, the glass-covered display shows sync progress. Once fully synchronized, it becomes a live mempool animation of every transaction waiting to be confirmed by the network. The same animation appears on the device web portal at blockvase.local alongside other metrics, and you can open it in a separate window to click through transactions and inspect their details in the block viewer. Future updates will unlock even more functionality.
+            </p>
+            <p class="muted-note portal-shop-copy-secondary">
+              Setup is quick and easy. Just plug in the device, press the button on the back inside the vent hole, and scan the QR code to begin. You'll be connected to the device's onboard access point and scan one more QR code to connect the device to your network via 2.4GHz WiFi for maximum range.
+            </p>
+            <div class="portal-shop-facts">
+              <div class="portal-shop-facts__col">
+                <p class="portal-overline">Specifications</p>
+                <ul class="portal-shop-fact-list" aria-label="Technical specifications">
+                  <li class="portal-shop-fact">
+                    <span class="portal-shop-fact__key">CPU</span>
+                    <span class="portal-shop-fact__rule" aria-hidden="true"></span>
+                    <span class="portal-shop-fact__val">Raspberry Pi 5</span>
+                  </li>
+                  <li class="portal-shop-fact">
+                    <span class="portal-shop-fact__key">RAM</span>
+                    <span class="portal-shop-fact__rule" aria-hidden="true"></span>
+                    <span class="portal-shop-fact__val">8 GB LPDDR4X</span>
+                  </li>
+                  <li class="portal-shop-fact">
+                    <span class="portal-shop-fact__key">STORAGE</span>
+                    <span class="portal-shop-fact__rule" aria-hidden="true"></span>
+                    <span class="portal-shop-fact__val">2 TB NVMe</span>
+                  </li>
+                  <li class="portal-shop-fact">
+                    <span class="portal-shop-fact__key">ASIC</span>
+                    <span class="portal-shop-fact__rule" aria-hidden="true"></span>
+                    <span class="portal-shop-fact__val">BM1366</span>
+                  </li>
+                  <li class="portal-shop-fact">
+                    <span class="portal-shop-fact__key">DISPLAY</span>
+                    <span class="portal-shop-fact__rule" aria-hidden="true"></span>
+                    <span class="portal-shop-fact__val">ST7701S LCD</span>
+                  </li>
+                  <li class="portal-shop-fact">
+                    <span class="portal-shop-fact__key">NETWORK</span>
+                    <span class="portal-shop-fact__rule" aria-hidden="true"></span>
+                    <span class="portal-shop-fact__val">2.4 GHz Wi-Fi</span>
+                  </li>
+                  <li class="portal-shop-fact">
+                    <span class="portal-shop-fact__key">POWER</span>
+                    <span class="portal-shop-fact__rule" aria-hidden="true"></span>
+                    <span class="portal-shop-fact__val">45W USB-C PD</span>
+                  </li>
+                  <li class="portal-shop-fact">
+                    <span class="portal-shop-fact__key">NODE</span>
+                    <span class="portal-shop-fact__rule" aria-hidden="true"></span>
+                    <span class="portal-shop-fact__val">Bitcoin Knots</span>
+                  </li>
+                  <li class="portal-shop-fact">
+                    <span class="portal-shop-fact__key">MINING</span>
+                    <span class="portal-shop-fact__rule" aria-hidden="true"></span>
+                    <span class="portal-shop-fact__val">DATUM Gateway</span>
+                  </li>
+                  <li class="portal-shop-fact">
+                    <span class="portal-shop-fact__key">SIZE</span>
+                    <span class="portal-shop-fact__rule" aria-hidden="true"></span>
+                    <span class="portal-shop-fact__val">3.7 in cube</span>
+                  </li>
+                </ul>
+              </div>
+              <div class="portal-shop-facts__col">
+                <p class="portal-overline">Features</p>
+                <ul class="portal-shop-fact-list" aria-label="Product features">
+                  <li class="portal-shop-fact">
+                    <span class="portal-shop-fact__key">MINING</span>
+                    <span class="portal-shop-fact__rule" aria-hidden="true"></span>
+                    <span class="portal-shop-fact__val">True solo mining</span>
+                  </li>
+                  <li class="portal-shop-fact">
+                    <span class="portal-shop-fact__key">NODE</span>
+                    <span class="portal-shop-fact__rule" aria-hidden="true"></span>
+                    <span class="portal-shop-fact__val">Your own full node</span>
+                  </li>
+                  <li class="portal-shop-fact">
+                    <span class="portal-shop-fact__key">DATUM</span>
+                    <span class="portal-shop-fact__rule" aria-hidden="true"></span>
+                    <span class="portal-shop-fact__val">Local gateway</span>
+                  </li>
+                  <li class="portal-shop-fact">
+                    <span class="portal-shop-fact__key">DISPLAY</span>
+                    <span class="portal-shop-fact__rule" aria-hidden="true"></span>
+                    <span class="portal-shop-fact__val">Live mempool</span>
+                  </li>
+                  <li class="portal-shop-fact">
+                    <span class="portal-shop-fact__key">METRICS</span>
+                    <span class="portal-shop-fact__rule" aria-hidden="true"></span>
+                    <span class="portal-shop-fact__val">Sovereign dashboard</span>
+                  </li>
+                  <li class="portal-shop-fact">
+                    <span class="portal-shop-fact__key">SETUP</span>
+                    <span class="portal-shop-fact__rule" aria-hidden="true"></span>
+                    <span class="portal-shop-fact__val">Pre-synced &amp; ready</span>
+                  </li>
+                  <li class="portal-shop-fact">
+                    <span class="portal-shop-fact__key">FORM</span>
+                    <span class="portal-shop-fact__rule" aria-hidden="true"></span>
+                    <span class="portal-shop-fact__val">Table-top cube</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <div class="portal-shop-card__aside">
+            <span class="portal-shop-price">$1,500.00</span>
+            <span class="portal-shop-note">Pre-synced and assembled unit. Quick setup via onboard Wi-Fi.</span>
+            <button class="btn" type="button" data-checkout-start>Start checkout</button>
+            <a class="btn secondary" href="#resources" data-portal-tab-link="resources">View resources</a>
+          </div>
+        </div>
+
+        <div class="portal-checkout-shell" data-checkout>
+          <div class="portal-checkout-steps" aria-label="Checkout progress">
+            <button type="button" class="portal-checkout-step is-active" data-checkout-step-button="details">1. Shipping &amp; Account</button>
+            <button type="button" class="portal-checkout-step" data-checkout-step-button="payment">2. Payment</button>
+            <button type="button" class="portal-checkout-step" data-checkout-step-button="review">3. Review</button>
+          </div>
+
+          <div class="metric-board metric-board--dense portal-checkout">
+              <section class="portal-checkout-panel is-active" data-checkout-step="details" aria-labelledby="checkoutDetailsTitle">
+                <div class="display-preview-header">
+                  <div class="display-preview-header-text">
+                    <h2 class="metric-board-title" id="checkoutDetailsTitle">Shipping &amp; Account</h2>
+                    <p class="display-preview-lede muted-note" id="checkoutDetailsLede">Enter shipping information and set a password for your account.</p>
+                  </div>
+                </div>
+                <p class="muted-note portal-checkout-signed-in" id="blockvaseCheckoutSignedInNote" hidden></p>
+                <form id="blockvaseShippingForm" class="portal-checkout-form portal-checkout-shipping-form" autocomplete="on" method="post" action="/" novalidate>
+                  <div class="portal-checkout-grid">
+                    <label for="firstName">First name<input id="firstName" name="firstName" autocomplete="section-blockvase-shipping shipping given-name" required></label>
+                    <label for="lastName">Last name<input id="lastName" name="lastName" autocomplete="section-blockvase-shipping shipping family-name" required></label>
+                    <label id="blockvaseCheckoutEmailField" for="email">Email<input id="email" name="email" type="email" autocomplete="section-blockvase-shipping shipping email" required></label>
+                    <label for="phone">Phone<input id="phone" name="phone" type="tel" autocomplete="section-blockvase-shipping shipping tel"></label>
+                    <label class="portal-checkout-wide" for="address1">Address<input id="address1" name="address1" autocomplete="section-blockvase-shipping shipping address-line1" required></label>
+                    <label class="portal-checkout-wide" for="address2">Apartment, suite, etc. (optional)<input id="address2" name="address2" autocomplete="section-blockvase-shipping shipping address-line2"></label>
+                    <label for="city">City<input id="city" name="city" autocomplete="section-blockvase-shipping shipping address-level2" required></label>
+                    <label for="state">State<input id="state" name="state" autocomplete="section-blockvase-shipping shipping address-level1" required></label>
+                    <label for="zip">ZIP<input id="zip" name="zip" autocomplete="section-blockvase-shipping shipping postal-code" required></label>
+                    <label class="portal-checkout-wide" for="country">Country
+                      <select id="country" name="country" autocomplete="section-blockvase-shipping shipping country" required>
+                        <option value="US" selected>United States</option>
+                      </select>
+                    </label>
+                    <label class="portal-checkout-wide portal-checkout-checkbox">
+                      <input type="checkbox" name="billing_different" id="blockvaseBillingDifferent">
+                      <span>Billing address is different from shipping</span>
+                    </label>
+                    <div class="portal-checkout-billing-fields" id="blockvaseBillingFields" hidden>
+                      <label class="portal-checkout-wide" for="billingAddress1">Billing address<input id="billingAddress1" name="billingAddress1" autocomplete="section-blockvase-billing billing address-line1"></label>
+                      <label for="billingCity">Billing city<input id="billingCity" name="billingCity" autocomplete="section-blockvase-billing billing address-level2"></label>
+                      <label for="billingState">Billing state<input id="billingState" name="billingState" autocomplete="section-blockvase-billing billing address-level1"></label>
+                      <label for="billingZip">Billing ZIP<input id="billingZip" name="billingZip" autocomplete="section-blockvase-billing billing postal-code"></label>
+                    </div>
+                  </div>
+                  <label class="portal-checkout-checkbox portal-checkout-legal">
+                    <input type="checkbox" name="terms_privacy_acknowledgement" required>
+                    <span>I have read and agree to the <a href="/terms.html" target="_blank" rel="noopener noreferrer">Terms &amp; Conditions</a> and <a href="/privacy.html" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.</span>
+                  </label>
+                  <button class="portal-visually-hidden" type="submit" tabindex="-1">Continue to payment</button>
+                </form>
+                <form id="blockvaseAccountForm" class="portal-checkout-form portal-checkout-account-form" autocomplete="on" novalidate>
+                  <div class="portal-checkout-account-fields" id="blockvaseCheckoutAccount" data-account-fields>
+                    <label for="blockvaseAccountPassword">Password<input id="blockvaseAccountPassword" name="account_password" type="password" autocomplete="new-password" minlength="8" placeholder="8+ characters"></label>
+                    <label for="blockvaseAccountPasswordConfirm">Confirm password<input id="blockvaseAccountPasswordConfirm" name="account_password_confirm" type="password" autocomplete="new-password" minlength="8" placeholder="Re-enter password"></label>
+                  </div>
+                </form>
+                <p class="muted-note" id="blockvaseCheckoutAccountNote">Your checkout email becomes your account login. Already have an account? <a href="#account" data-portal-tab-link="account">Sign in</a> before checkout.</p>
+              </section>
+
+            <form id="blockvaseCheckoutForm" class="portal-checkout-form" autocomplete="on" novalidate>
+            <section class="portal-checkout-panel" data-checkout-step="payment" aria-labelledby="checkoutPaymentTitle" hidden>
+              <div class="display-preview-header">
+                <div class="display-preview-header-text">
+                  <h2 class="metric-board-title" id="checkoutPaymentTitle">Payment</h2>
+                  <p class="display-preview-lede muted-note" id="blockvasePaymentLede">Choose one payment method for the full order total. Split payments are not supported.</p>
+                </div>
+              </div>
+              <div class="portal-payment-methods" role="radiogroup" aria-label="Payment method">
+                <label class="portal-payment-option">
+                  <input type="radio" name="payment_method" value="bitcoin">
+                  <span class="portal-payment-option__inner">
+                    <span class="portal-payment-option__icon portal-payment-option__icon--bitcoin" aria-hidden="true">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" focusable="false">
+                        <circle cx="12" cy="12" r="11" fill="currentColor" opacity="0.14"/>
+                        <path fill="currentColor" d="M13.9 10.4c.2-1.3-.8-1.8-2.1-2.2l.4-1.8-1-.3-.4 1.7c-.3-.1-.6-.2-.9-.2l.4-1.7-1-.2-.4 1.8c-.2 0-.5-.1-.7-.1l-1.4-.4-.3 1.1s.8.2.8.2c.4.1.5.4.5.7l-.5 2.1c0 .1 0 .1-.1.1-.1 0-.2-.1-.3-.1l-1.3-.5-.6 1.4 1.3.5c.2.1.5.2.7.3l-.4 1.8 1 .3.4-1.8c.3.1.6.2.9.2l-.4 1.8 1 .3.4-1.8c2.4.5 4.2.3 5-1.9.6-1.8 0-2.8-1.3-3.5.9-.2 1.6-.9 1.8-2.2zm-3.2 4.4c-.4 1.7-3.2.8-4.1.6l.7-3c.9.2 3.8.7 3.4 2.4zm.5-4.5c-.4 1.5-2.7.7-3.5.5l.7-2.7c.8.2 3.3.6 2.8 2.2z"/>
+                      </svg>
+                    </span>
+                    <span class="portal-payment-option__text">
+                      <span class="portal-payment-option__title">Bitcoin</span>
+                      <span class="portal-payment-option__desc">Pay from any wallet with a QR code or address.</span>
+                      <span class="portal-payment-option__price" id="blockvaseBitcoinQuoteSummary">Loading BTC equivalent...</span>
+                    </span>
+                  </span>
+                </label>
+                <label class="portal-payment-option">
+                  <input type="radio" name="payment_method" value="ipospays">
+                  <span class="portal-payment-option__inner">
+                    <span class="portal-payment-option__icon portal-payment-option__icon--card" aria-hidden="true">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" focusable="false">
+                        <rect x="2" y="5" width="20" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                        <rect x="2" y="9" width="20" height="3" fill="currentColor" opacity="0.35"/>
+                        <rect x="5" y="14.5" width="5" height="1.5" rx=".75" fill="currentColor" opacity="0.55"/>
+                      </svg>
+                    </span>
+                    <span class="portal-payment-option__text">
+                      <span class="portal-payment-option__title">Credit card</span>
+                      <span class="portal-payment-option__desc">Pay securely with your debit or credit card.</span>
+                      <span class="portal-payment-option__price" id="blockvaseCardPriceSummary">$1,500.00 USD total</span>
+                    </span>
+                  </span>
+                </label>
+              </div>
+              <p class="muted-note portal-payment-note" id="blockvasePaymentNote">Card details are encrypted before they reach our servers. Bitcoin must be sent as one full invoice amount.</p>
+              <div class="portal-bitcoin-invoice" id="blockvaseBitcoinInvoice">
+                <div class="portal-bitcoin-qr" id="blockvaseBitcoinQr" aria-label="Bitcoin payment QR code">
+                  <span>Creating invoice...</span>
+                </div>
+                <div class="portal-bitcoin-details">
+                  <p class="portal-overline">Bitcoin invoice</p>
+                  <p class="muted-note" id="blockvaseBitcoinPaymentText">Complete shipping and account details to create an invoice.</p>
+                  <dl>
+                    <div><dt>Amount</dt><dd id="blockvaseBitcoinAmount">--</dd></div>
+                    <div><dt>Address</dt><dd id="blockvaseBitcoinAddress">--</dd></div>
+                    <div><dt>Status</dt><dd id="blockvaseBitcoinStatus" class="portal-bitcoin-status-value">Pending</dd></div>
+                  </dl>
+                  <p class="portal-bitcoin-problem-note" id="blockvaseBitcoinProblemNote" hidden role="alert">
+                    <span id="blockvaseBitcoinProblemNoteText"></span>
+                  </p>
+                  <div class="portal-bitcoin-actions">
+                    <a class="btn secondary" id="blockvaseBitcoinUriLink" href="#" hidden>Open wallet</a>
+                    <button class="btn secondary" type="button" data-copy-bitcoin-uri hidden>Copy URI</button>
+                  </div>
+                </div>
+              </div>
+              <div class="portal-card-payment" id="blockvaseIpospaysCard" hidden>
+                <p class="portal-overline">Credit card</p>
+                <p class="muted-note" id="blockvaseIpospaysStatus">Loading secure card checkout...</p>
+                <div id="blockvaseIpospaysFields" class="portal-checkout-grid">
+                  <label class="portal-checkout-wide">Card number<input id="ccnumber" autocomplete="off" inputmode="numeric"></label>
+                  <label>Expiration<input id="ccexpiry" autocomplete="off" placeholder="MM/YY"></label>
+                  <label>CVV<input id="cccvv" autocomplete="off" inputmode="numeric"></label>
+                </div>
+              </div>
+            </section>
+
+            <section class="portal-checkout-panel" data-checkout-step="review" aria-labelledby="checkoutReviewTitle" hidden>
+              <div class="display-preview-header">
+                <div class="display-preview-header-text">
+                  <h2 class="metric-board-title" id="checkoutReviewTitle">Review Order</h2>
+                  <p class="display-preview-lede muted-note">Confirm the order before paying the full total with the selected method.</p>
+                </div>
+              </div>
+              <div class="portal-order-summary">
+                <div><span>Blockvase device</span><strong id="blockvaseReviewItemTotal">$1,500.00</strong></div>
+                <div class="portal-order-total"><span>Total</span><strong id="blockvaseReviewTotal">$1,500.00</strong></div>
+                <div class="portal-review-payment-row"><span>Payment</span><strong id="blockvaseReviewPayment" class="portal-status-with-spinner">Choose payment method</strong></div>
+              </div>
+              <div class="portal-review-address" id="blockvaseReviewAddress"></div>
+            </section>
+
+            </form>
+
+            <p class="portal-checkout-status" id="blockvaseCheckoutStatus" role="status"></p>
+            <div class="portal-checkout-actions">
+              <button class="btn secondary portal-checkout-actions__back" type="button" data-checkout-prev hidden>Back</button>
+              <div class="portal-checkout-actions__primary">
+                <button class="btn" type="button" data-checkout-next>Continue</button>
+                <button class="btn" type="submit" form="blockvaseCheckoutForm" data-checkout-submit hidden>Check / submit payment</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="accountTab" class="portal-tab-panel" data-portal-panel="account" role="tabpanel" hidden>
+        <div class="metric-board metric-board--dense portal-account-card">
+          <div class="display-preview-header">
+            <div class="display-preview-header-text">
+              <h2 class="metric-board-title">Account</h2>
+              <p class="display-preview-lede muted-note" id="blockvaseAccountIntro">Sign in with the email and password you set at checkout. Accounts are created when you purchase.</p>
+            </div>
+          </div>
+          <div id="blockvaseAuthForms">
+            <form class="portal-checkout-form" data-blockvase-login autocomplete="off">
+              <div class="portal-checkout-grid">
+                <label class="portal-checkout-wide">Email<input name="email" type="email" autocomplete="username" required></label>
+                <label class="portal-checkout-wide">Password<input name="password" type="password" autocomplete="current-password" required></label>
+              </div>
+              <div class="portal-checkout-actions">
+                <button class="btn" type="submit">Log in</button>
+              </div>
+            </form>
+          </div>
+          <div class="portal-account-session" id="blockvaseAccountSession" hidden>
+            <p class="muted-note" id="blockvaseSessionText"></p>
+            <button class="btn secondary" type="button" data-blockvase-logout>Log out</button>
+          </div>
+        </div>
+        <p class="portal-checkout-status" id="blockvaseOrdersStatus" role="status"></p>
+        <div class="portal-orders-list" id="blockvaseOrdersList"></div>
+      </section>
+
+      <section id="adminTab" class="portal-tab-panel" data-portal-panel="admin" role="tabpanel" hidden>
+        <div class="metric-board metric-board--dense portal-admin-card">
+          <div class="display-preview-header">
+            <div class="display-preview-header-text">
+              <h2 class="metric-board-title">Admin Orders</h2>
+              <p class="display-preview-lede muted-note" id="blockvaseAdminIntro">Manage Blockvase orders, fulfillment status, and tracking. Orders with under- or overpayments are highlighted for manual resolution.</p>
+            </div>
+          </div>
+          <form class="portal-admin-order-controls" id="blockvaseAdminOrderControls">
+            <label class="portal-admin-order-search">Search orders<input name="q" type="search" autocomplete="off" placeholder="Order ID, email, name, tracking, txid"></label>
+            <label>Payment<select name="payment_status">
+              <option value="all">All payments</option>
+              <option value="pending">Pending</option>
+              <option value="awaiting confirmation">Awaiting confirmation</option>
+              <option value="paid">Paid</option>
+              <option value="underpaid">Underpaid</option>
+              <option value="payment failed">Payment failed</option>
+              <option value="refund_pending">Refund pending</option>
+              <option value="cancelled">Cancelled</option>
+              <option value="refunded">Refunded</option>
+              <option value="expired">Expired</option>
+            </select></label>
+            <label>Fulfillment<select name="fulfillment_status">
+              <option value="all">All fulfillment</option>
+              <option value="pending">Pending</option>
+              <option value="processing">Processing</option>
+              <option value="shipped">Shipped</option>
+              <option value="cancelled">Cancelled</option>
+            </select></label>
+            <label>Method<select name="payment_method">
+              <option value="all">All methods</option>
+              <option value="bitcoin">Bitcoin</option>
+              <option value="ipospays">Credit card</option>
+            </select></label>
+            <label>Resolution<select name="resolution">
+              <option value="all">All orders</option>
+              <option value="needs_resolution">Needs resolution</option>
+              <option value="clean">No payment issue</option>
+            </select></label>
+            <label>Sort<select name="sort">
+              <option value="created_at">Created date</option>
+              <option value="updated_at">Updated date</option>
+              <option value="total_cents">Total</option>
+              <option value="payment_status">Payment status</option>
+              <option value="fulfillment_status">Fulfillment</option>
+              <option value="payment_method">Payment method</option>
+            </select></label>
+            <label>Direction<select name="direction">
+              <option value="desc">Newest first</option>
+              <option value="asc">Oldest first</option>
+            </select></label>
+            <button class="btn secondary" type="reset">Reset</button>
+          </form>
+        </div>
+        <p class="portal-checkout-status" id="blockvaseAdminStatus" role="status"></p>
+        <div class="portal-orders-list" id="blockvaseAdminOrdersList"></div>
+        <div class="portal-admin-orders-footer" id="blockvaseAdminOrdersFooter" hidden>
+          <p class="muted-note" id="blockvaseAdminOrdersMeta"></p>
+          <button class="btn secondary" type="button" id="blockvaseAdminLoadMore">Load more orders</button>
+        </div>
+      </section>
+
+      <section id="affiliatesTab" class="portal-tab-panel" data-portal-panel="affiliates" role="tabpanel" hidden>
+        <div class="metric-board metric-board--dense portal-admin-card">
+          <div class="display-preview-header">
+            <div class="display-preview-header-text">
+              <h2 class="metric-board-title">Affiliate Links</h2>
+              <p class="display-preview-lede muted-note" id="blockvaseAffiliatesIntro">Create reseller links, set per-sale commissions, and track attributed sales.</p>
+            </div>
+          </div>
+          <div class="portal-affiliate-metrics" id="blockvaseAffiliateMetrics"></div>
+          <form class="portal-admin-order-controls portal-affiliate-form" id="blockvaseAffiliateForm">
+            <input type="hidden" name="affiliate_id">
+            <label>Name<input name="name" autocomplete="off" placeholder="Reseller name" required></label>
+            <label>Email<input name="email" type="email" autocomplete="off" placeholder="reseller@example.com"></label>
+            <label>Code<input name="code" autocomplete="off" placeholder="partner-code" required></label>
+            <label>Commission ($)<input name="commission_dollars" type="number" min="0" step="0.01" placeholder="100.00" required></label>
+            <label>Active<select name="is_active">
+              <option value="true">Active</option>
+              <option value="false">Inactive</option>
+            </select></label>
+            <div class="portal-affiliate-form-actions">
+              <button class="btn" type="submit">Save affiliate</button>
+              <button class="btn secondary" type="reset">New affiliate</button>
+            </div>
+          </form>
+        </div>
+        <p class="portal-checkout-status" id="blockvaseAffiliatesStatus" role="status"></p>
+        <div class="portal-orders-list portal-affiliate-list" id="blockvaseAffiliatesList"></div>
+      </section>
+
+      <section id="resourcesTab" class="portal-tab-panel" data-portal-panel="resources" role="tabpanel" hidden>
+        <div class="metric-board metric-board--dense portal-resource-card">
+          <div class="display-preview-header">
+            <div class="display-preview-header-text">
+              <h2 class="metric-board-title">c_datum_prime</h2>
+              <p class="display-preview-lede muted-note">Blockvase DATUM pool server (Prime). This is the pool software behind pool.blockvase.com, not a miner gateway and not a public Stratum server.</p>
+            </div>
+            <a class="btn secondary" href="https://github.com/Blockvase/c_datum_prime" target="_blank" rel="noopener noreferrer">Open repo</a>
+          </div>
+        </div>
+
+        <div class="metric-board metric-board--dense portal-resource-card">
+          <div class="display-preview-header">
+            <div class="display-preview-header-text">
+              <h2 class="metric-board-title">CONVOY DATUM Gateway</h2>
+              <p class="display-preview-lede muted-note">The recommended local DATUM gateway. Point ASICs at the gateway, then point the gateway at this pool. Keep CONVOY DATUM separate from Prime.</p>
+            </div>
+            <a class="btn secondary" href="https://github.com/CONVOYMining/datum_gateway" target="_blank" rel="noopener noreferrer">Open repo</a>
+          </div>
+        </div>
+
+        <div class="metric-board metric-board--dense portal-resource-card">
+          <div class="display-preview-header">
+            <div class="display-preview-header-text">
+              <h2 class="metric-board-title">Bitcoin with BLAKE2b</h2>
+              <p class="display-preview-lede muted-note">
+                Bitcoin is peer-to-peer electronic cash. The BLAKE2b chain keeps Bitcoin as money only by rejecting arbitrary data storage. New blocks use BLAKE2b instead of SHA256d, so anyone who wants to participate should run a node and verify for themselves.
+              </p>
+            </div>
+            <a class="btn secondary" href="https://bitcoin-blake2b.org/" target="_blank" rel="noopener noreferrer">Open site</a>
+          </div>
+        </div>
+      </section>
+      <footer class="portal-footer" aria-label="Blockvase legal links">
+        <p>&copy; 2026 Blockvase.</p>
+        <nav aria-label="Legal">
+          <a href="/terms.html">Terms &amp; Conditions</a>
+          <a href="/privacy.html">Privacy Policy</a>
+        </nav>
+      </footer>
+    </div>
+    <script>
+      (function () {
+        var el = document.getElementById("portalSplashOverlay") || document.querySelector(".portal-splash-overlay");
+        if (!el) return;
+        function finish() {
+          el.classList.add("portal-splash-overlay--gone");
+        }
+        function fadeOut() {
+          el.classList.add("portal-splash-overlay--hide");
+          el.addEventListener("transitionend", finish, { once: true });
+          setTimeout(finish, 600);
+        }
+        function schedule() {
+          setTimeout(fadeOut, 300);
+        }
+        if (document.readyState === "complete") schedule();
+        else window.addEventListener("load", schedule);
+      })();
+    </script>
+    <script src="/static/blockvase-api.js?v=91"></script>
+    <script src="/static/qrcode.js?v=88"></script>
+    <script src="/static/index.js?v=288"></script>
+  </body>
+</html>

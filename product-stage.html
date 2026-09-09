@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <title>Blockvase — Product Stage</title>
+    <meta name="description" content="Interactive Blockvase product stage for the Bitcoin node, live block viewer, and mempool display." />
+    <link rel="canonical" href="https://blockvase.com/product-stage" />
+    <meta property="og:title" content="Blockvase Product Stage" />
+    <meta property="og:description" content="Interactive Blockvase product stage for the Bitcoin node, live block viewer, and mempool display." />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Blockvase" />
+    <meta property="og:url" content="https://blockvase.com/product-stage" />
+    <meta property="og:image" content="https://blockvase.com/media/x-preview.png?v=4" />
+    <meta property="og:image:secure_url" content="https://blockvase.com/media/x-preview.png?v=4" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="628" />
+    <meta property="og:image:alt" content="Blockvase Block Viewer" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Blockvase Product Stage" />
+    <meta name="twitter:description" content="Interactive Blockvase product stage for the Bitcoin node, live block viewer, and mempool display." />
+    <meta name="twitter:image" content="https://blockvase.com/media/x-preview.png?v=4" />
+    <link rel="icon" href="/media/logo_64.png" type="image/png" />
+    <link rel="stylesheet" href="/static/style.css?v=239" />
+    <script>
+      try {
+        var bw = "glow";
+        try {
+          var saved = localStorage.getItem("blockvase-bw");
+          if (saved === "black" || saved === "white" || saved === "glow") bw = saved;
+        } catch (e) {}
+        document.documentElement.setAttribute("data-bw", bw);
+      } catch (e) {}
+    </script>
+    <script type="module" src="/static/vendor/model-viewer.min.js?v=2"></script>
+  </head>
+  <body class="portal-page product-stage-page" data-theme="default" data-portal-mode="product-stage">
+    <div class="product-stage" id="productStage">
+      <div class="product-stage__cta" aria-hidden="true">
+        <div class="product-stage__cta-brand">
+          <img class="product-stage__cta-logo" src="/media/logo_200.png" alt="" />
+          <h2 class="product-stage__cta-title">Blockvase</h2>
+        </div>
+      </div>
+      <aside class="product-stage__specs" aria-label="Technical specifications">
+        <div class="product-stage__brand">
+          <img class="product-stage__brand-logo" src="/media/logo_200.png" alt="" />
+          <h1 class="product-stage__brand-title">Blockvase</h1>
+        </div>
+        <ul class="product-stage__spec-list">
+          <li class="product-stage__spec" style="--i: 0">
+            <span class="product-stage__spec-key">CPU</span>
+            <span class="product-stage__spec-rule" aria-hidden="true"></span>
+            <span class="product-stage__spec-val">Raspberry Pi 5</span>
+          </li>
+          <li class="product-stage__spec" style="--i: 1">
+            <span class="product-stage__spec-key">RAM</span>
+            <span class="product-stage__spec-rule" aria-hidden="true"></span>
+            <span class="product-stage__spec-val">8 GB LPDDR4X</span>
+          </li>
+          <li class="product-stage__spec" style="--i: 2">
+            <span class="product-stage__spec-key">STORAGE</span>
+            <span class="product-stage__spec-rule" aria-hidden="true"></span>
+            <span class="product-stage__spec-val">2 TB NVMe</span>
+          </li>
+          <li class="product-stage__spec" style="--i: 3">
+            <span class="product-stage__spec-key">ASIC</span>
+            <span class="product-stage__spec-rule" aria-hidden="true"></span>
+            <span class="product-stage__spec-val">BM1366</span>
+          </li>
+          <li class="product-stage__spec" style="--i: 4">
+            <span class="product-stage__spec-key">DISPLAY</span>
+            <span class="product-stage__spec-rule" aria-hidden="true"></span>
+            <span class="product-stage__spec-val">ST7701S LCD</span>
+          </li>
+          <li class="product-stage__spec" style="--i: 5">
+            <span class="product-stage__spec-key">NETWORK</span>
+            <span class="product-stage__spec-rule" aria-hidden="true"></span>
+            <span class="product-stage__spec-val">2.4 GHz Wi-Fi</span>
+          </li>
+          <li class="product-stage__spec" style="--i: 6">
+            <span class="product-stage__spec-key">POWER</span>
+            <span class="product-stage__spec-rule" aria-hidden="true"></span>
+            <span class="product-stage__spec-val">45W USB-C PD</span>
+          </li>
+          <li class="product-stage__spec" style="--i: 7">
+            <span class="product-stage__spec-key">NODE</span>
+            <span class="product-stage__spec-rule" aria-hidden="true"></span>
+            <span class="product-stage__spec-val">Bitcoin Knots</span>
+          </li>
+          <li class="product-stage__spec" style="--i: 8">
+            <span class="product-stage__spec-key">MINING</span>
+            <span class="product-stage__spec-rule" aria-hidden="true"></span>
+            <span class="product-stage__spec-val">DATUM Gateway</span>
+          </li>
+          <li class="product-stage__spec" style="--i: 9">
+            <span class="product-stage__spec-key">SIZE</span>
+            <span class="product-stage__spec-rule" aria-hidden="true"></span>
+            <span class="product-stage__spec-val">3.7 in cube</span>
+          </li>
+        </ul>
+      </aside>
+      <aside class="product-stage__benefits" aria-label="Product benefits">
+        <ul class="product-stage__benefit-list">
+          <li class="product-stage__benefit" style="--i: 0">
+            <span class="product-stage__benefit-key">MINING</span>
+            <span class="product-stage__benefit-rule" aria-hidden="true"></span>
+            <span class="product-stage__benefit-val">True solo mining</span>
+          </li>
+          <li class="product-stage__benefit" style="--i: 1">
+            <span class="product-stage__benefit-key">NODE</span>
+            <span class="product-stage__benefit-rule" aria-hidden="true"></span>
+            <span class="product-stage__benefit-val">Your own full node</span>
+          </li>
+          <li class="product-stage__benefit" style="--i: 2">
+            <span class="product-stage__benefit-key">DATUM</span>
+            <span class="product-stage__benefit-rule" aria-hidden="true"></span>
+            <span class="product-stage__benefit-val">Local gateway</span>
+          </li>
+          <li class="product-stage__benefit" style="--i: 3">
+            <span class="product-stage__benefit-key">DISPLAY</span>
+            <span class="product-stage__benefit-rule" aria-hidden="true"></span>
+            <span class="product-stage__benefit-val">Live mempool</span>
+          </li>
+          <li class="product-stage__benefit" style="--i: 4">
+            <span class="product-stage__benefit-key">METRICS</span>
+            <span class="product-stage__benefit-rule" aria-hidden="true"></span>
+            <span class="product-stage__benefit-val">Sovereign dashboard</span>
+          </li>
+          <li class="product-stage__benefit" style="--i: 5">
+            <span class="product-stage__benefit-key">SETUP</span>
+            <span class="product-stage__benefit-rule" aria-hidden="true"></span>
+            <span class="product-stage__benefit-val">Pre-synced &amp; ready</span>
+          </li>
+          <li class="product-stage__benefit" style="--i: 6">
+            <span class="product-stage__benefit-key">FORM</span>
+            <span class="product-stage__benefit-rule" aria-hidden="true"></span>
+            <span class="product-stage__benefit-val">Table-top cube</span>
+          </li>
+        </ul>
+      </aside>
+      <div class="portal-product-model product-stage__model" aria-label="Interactive Blockvase 3D model">
+        <div
+          class="portal-model-loading"
+          id="blockvaseModelLoading"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+          aria-label="Loading">
+          <span class="portal-model-loading__spinner" aria-hidden="true"></span>
+        </div>
+        <model-viewer
+          id="blockvaseProductModel"
+          src="/models/blockvase.glb?v=26"
+          camera-controls
+          touch-action="pan-y"
+          interaction-prompt="none"
+          shadow-intensity="0.85"
+          shadow-softness="0.8"
+          exposure="0.95"
+          environment-image="neutral"
+          camera-orbit="35deg 52deg 13.5m"
+          camera-target="0m 0m 0m"
+          field-of-view="32deg"
+          min-camera-orbit="auto 40deg 3m"
+          max-camera-orbit="auto 85deg 12m"
+          alt="Interactive shaded 3D model of the Blockvase device">
+          <button class="dot" slot="hotspot-ext-w0"></button>
+          <button class="dot" slot="hotspot-dim-w0"></button>
+          <button class="dim" slot="hotspot-dim-w">3.7 in</button>
+          <button class="dot" slot="hotspot-dim-w1"></button>
+          <button class="dot" slot="hotspot-ext-w1"></button>
+
+          <button class="dot" slot="hotspot-ext-h0"></button>
+          <button class="dot" slot="hotspot-dim-h0"></button>
+          <button class="dim" slot="hotspot-dim-h">3.7 in</button>
+          <button class="dot" slot="hotspot-dim-h1"></button>
+          <button class="dot" slot="hotspot-ext-h1"></button>
+
+          <button class="dot" slot="hotspot-ext-d0"></button>
+          <button class="dot" slot="hotspot-dim-d0"></button>
+          <button class="dim" slot="hotspot-dim-d">3.7 in</button>
+          <button class="dot" slot="hotspot-dim-d1"></button>
+          <button class="dot" slot="hotspot-ext-d1"></button>
+
+        </model-viewer>
+        <svg id="blockvaseDimLines" class="portal-dim-lines" aria-hidden="true">
+          <line class="dimensionLine" data-dim="w-ext0"></line>
+          <line class="dimensionLine" data-dim="w-tick0"></line>
+          <line class="dimensionLine" data-dim="w"></line>
+          <line class="dimensionLine" data-dim="w-tick1"></line>
+          <line class="dimensionLine" data-dim="w-ext1"></line>
+
+          <line class="dimensionLine" data-dim="h-ext0"></line>
+          <line class="dimensionLine" data-dim="h-tick0"></line>
+          <line class="dimensionLine" data-dim="h"></line>
+          <line class="dimensionLine" data-dim="h-tick1"></line>
+          <line class="dimensionLine" data-dim="h-ext1"></line>
+
+          <line class="dimensionLine" data-dim="d-ext0"></line>
+          <line class="dimensionLine" data-dim="d-tick0"></line>
+          <line class="dimensionLine" data-dim="d"></line>
+          <line class="dimensionLine" data-dim="d-tick1"></line>
+          <line class="dimensionLine" data-dim="d-ext1"></line>
+        </svg>
+      </div>
+    </div>
+    <script src="/static/blockvase-api.js?v=89"></script>
+    <script src="/static/index.js?v=201"></script>
+  </body>
+</html>

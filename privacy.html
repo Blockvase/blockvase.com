@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <title>Privacy Policy | Blockvase</title>
+    <meta name="description" content="Privacy Policy for the Blockvase website, block viewer, checkout, accounts, and related services." />
+    <link rel="canonical" href="https://blockvase.com/privacy" />
+    <meta property="og:title" content="Privacy Policy | Blockvase" />
+    <meta property="og:description" content="Privacy Policy for the Blockvase website, block viewer, checkout, accounts, and related services." />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Blockvase" />
+    <meta property="og:url" content="https://blockvase.com/privacy" />
+    <meta property="og:image" content="https://blockvase.com/media/x-preview.png?v=4" />
+    <meta property="og:image:secure_url" content="https://blockvase.com/media/x-preview.png?v=4" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="628" />
+    <meta property="og:image:alt" content="Blockvase Block Viewer" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Privacy Policy | Blockvase" />
+    <meta name="twitter:description" content="Privacy Policy for the Blockvase website, block viewer, checkout, accounts, and related services." />
+    <meta name="twitter:image" content="https://blockvase.com/media/x-preview.png?v=4" />
+    <link rel="icon" href="/media/logo_64.png" type="image/png" />
+    <link rel="stylesheet" href="/static/style.css?v=239" />
+    <script>
+      try {
+        var bw = "glow";
+        try {
+          var saved = localStorage.getItem("blockvase-bw");
+          if (saved === "black" || saved === "white" || saved === "glow") bw = saved;
+        } catch (e) {}
+        document.documentElement.setAttribute("data-bw", bw);
+      } catch (e) {}
+    </script>
+  </head>
+  <body class="portal-page portal-legal-page" data-theme="default">
+    <div class="container">
+      <header>
+        <div class="header-left">
+          <a class="portal-brand-link" href="/" aria-label="Blockvase home">
+            <img class="logo" src="/media/logo_200.png" alt="Blockvase" />
+          </a>
+          <h1>Privacy Policy</h1>
+        </div>
+        <div class="header-right">
+          <a class="btn secondary portal-header-nav" href="/">Back to Blockvase</a>
+        </div>
+      </header>
+
+      <main class="metric-board metric-board--dense portal-legal-card">
+        <p class="portal-overline">Effective July 5, 2026 · Last Updated September 5, 2026</p>
+        <h2 class="metric-board-title">Blockvase Privacy Policy</h2>
+        <p class="display-preview-lede muted-note">
+          This policy explains how Blockvase handles information on blockvase.com, including the public block viewer, checkout, customer accounts, order administration, transactional email, and related device-platform features.
+        </p>
+
+        <section>
+          <h3>1. Information We Collect</h3>
+          <p>
+            If you use checkout or create an account, we collect information you provide, including name, email, phone number, shipping address, billing address when provided, account password hash, order details, fulfillment status, tracking number, and support-related communications. Checkout requires acknowledgement of these Terms and this Privacy Policy; we record that acknowledgement with the order, including an acceptance timestamp and policy version identifiers.
+          </p>
+          <p>
+            For Bitcoin orders, we store the invoice address, quoted BTC/sats amount, invoice status, transaction IDs, received amounts, confirmations, payment-mismatch records, and related timing so we can detect payment, handle mismatches, and fulfill or refund orders.
+          </p>
+          <p>
+            We also collect technical information such as IP address, user agent, timestamps, CSRF and session metadata, and server logs needed for security and operations. The public block viewer can be used without creating an account.
+          </p>
+        </section>
+
+        <section>
+          <h3>2. Block Viewer and Node Data</h3>
+          <p>
+            The hosted Block Viewer shows recent blocks, mempool activity, transaction details, and related chain metrics. That display is fed by Blockvase-operated Bitcoin nodes and relays, not by a third-party block explorer. We may store operational snapshots from those nodes, including block height, block hash, timestamps, transaction identifiers, sizes, fees, coinbase or pool labels, mempool entries, decoded transaction details, and search-job results so the site can render the viewer, search transactions, and keep the display current.
+          </p>
+          <p>
+            If you search or open a transaction, that query is processed against Blockvase systems and, when needed, the Blockvase node. Search terms, selected transaction IDs, and similar viewer actions may appear in operational logs.
+          </p>
+          <p>
+            Blockchain data is public by nature. Addresses, transaction IDs, amounts, and coinbase text shown in the viewer may already be visible on the network and cannot be deleted from the chain by Blockvase.
+          </p>
+        </section>
+
+        <section>
+          <h3>3. Payment Information</h3>
+          <p>
+            Card details are handled through a third-party payment provider (currently iPOSpays / Freedom To Design merchant processing where configured) and are not intended to be stored as full PAN or CVV by Blockvase servers. We may store processor responses, transaction references, refund status, card brand, last four digits where returned by the processor, and payment status needed for order records and support.
+          </p>
+          <p>
+            Bitcoin transactions are public on the Bitcoin network. Invoice addresses, transaction IDs, and amounts may be visible publicly.
+          </p>
+          <p>
+            To quote BTC amounts at checkout, we may retrieve live market-rate data from third-party price APIs such as Coinbase, Kraken, and CoinGecko. Those requests are operational market-data calls and are not intended to transmit your checkout identity to those APIs.
+          </p>
+        </section>
+
+        <section>
+          <h3>4. Device and Platform Data</h3>
+          <p>
+            If a Blockvase device or relay is configured to send data to a Blockvase service, we may receive operational data such as node identifier, block height, sync status, peer count, mempool size, transaction details, health signals, raw JSON snapshots, and timestamps.
+          </p>
+          <p>
+            The local dashboard on your device is intended to run on your own network. Your local node, wallet, network configuration, and mining setup may reveal information to your own network, internet provider, mining pool, Bitcoin peers, or third-party services depending on how you configure and use the device.
+          </p>
+        </section>
+
+        <section>
+          <h3>5. How We Use Information</h3>
+          <p>
+            We use information to operate the website and Block Viewer, process search and transaction lookups on Blockvase nodes, run checkout, create and manage accounts, process payments, confirm Bitcoin invoices, fulfill orders, validate shipping addresses where available, send transactional emails, provide customer support, detect payment issues, protect the site, debug services, improve the device platform, and comply with legal obligations.
+          </p>
+        </section>
+
+        <section>
+          <h3>6. Sharing and Service Providers</h3>
+          <p>
+            We share information with service providers only as needed to operate Blockvase, including:
+          </p>
+          <ul>
+            <li>Payment processors (card tokenization and settlement)</li>
+            <li>Amazon Web Services SES for transactional email (for example order and settlement notices)</li>
+            <li>Hosting, database, TLS, and infrastructure providers</li>
+            <li>Shipping carriers and optional address-validation services (including USPS APIs where configured)</li>
+            <li>Support, logging, and security tooling</li>
+          </ul>
+          <p>
+            We may disclose information if required by law, to protect rights or safety, to enforce our terms, or in connection with a business transfer. We do not sell personal information as defined by the CCPA/CPRA. The public Block Viewer does not send your lookups to third-party block explorers.
+          </p>
+        </section>
+
+        <section>
+          <h3>7. Cookies and Local Storage</h3>
+          <p>
+            The account portal uses cookies or similar browser storage to keep you signed in and protect authenticated areas (including a Blockvase session cookie). If you arrive through an affiliate link, your browser may store that referral code locally so checkout can attribute a later purchase. Your browser may also store normal site data such as visited links, preferences, or cached files. We do not use third-party advertising trackers on the Blockvase checkout or Block Viewer experience.
+          </p>
+        </section>
+
+        <section>
+          <h3>8. Retention</h3>
+          <p>
+            We keep order, payment, fulfillment, and account records as long as needed for operations, support, refunds, accounting, security, and legal compliance. Bitcoin receive addresses and transaction records may be retained to prevent address reuse and to preserve order integrity. Node snapshots, mempool data, transaction details, and search-job records are retained as needed to operate the Block Viewer and for diagnostics and security.
+          </p>
+        </section>
+
+        <section>
+          <h3>9. Security</h3>
+          <p>
+            We use reasonable technical and organizational measures to protect information, including HTTPS, hashed passwords, session controls, and limited access. No system is perfectly secure, and you are responsible for keeping your account password, local network, Bitcoin wallet, and device configuration secure.
+          </p>
+        </section>
+
+        <section>
+          <h3>10. Your Choices and Rights</h3>
+          <p>
+            Depending on your location, you may request access, correction, deletion, restriction, or portability of personal information where required by applicable law. Some records may need to be retained for order history, security, accounting, dispute handling, or legal reasons. Blockchain records cannot be altered by Blockvase.
+          </p>
+        </section>
+
+        <section>
+          <h3>11. Children</h3>
+          <p>
+            Blockvase is not directed to children under 18. We do not knowingly collect personal information from children under 18.
+          </p>
+        </section>
+
+        <section>
+          <h3>12. International Transfers</h3>
+          <p>
+            Information may be processed in the United States and other countries where Blockvase or its service providers operate.
+          </p>
+        </section>
+
+        <section>
+          <h3>13. Changes</h3>
+          <p>
+            We may update this policy as the product, Block Viewer, checkout, account portal, or platform changes. The Last Updated date above shows when this version was revised.
+          </p>
+        </section>
+
+        <section>
+          <h3>14. Contact</h3>
+          <p>
+            Privacy questions can be sent to
+            <a href="mailto:no-reply@blockvase.com">no-reply@blockvase.com</a>
+            or through the contact channel listed on your order confirmation.
+          </p>
+        </section>
+      </main>
+
+      <footer class="portal-footer" aria-label="Blockvase legal links">
+        <p>&copy; 2026 Blockvase.</p>
+        <nav aria-label="Legal">
+          <a href="/terms.html">Terms &amp; Conditions</a>
+          <a href="/privacy.html" aria-current="page">Privacy Policy</a>
+        </nav>
+      </footer>
+    </div>
+  </body>
+</html>
