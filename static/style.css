@@ -901,13 +901,11 @@ html[data-bw] body.portal-page .metric-board-title,
 html[data-bw] body.portal-page .portal-overline,
 html[data-bw] body.portal-page .portal-shop-fact__key,
 html[data-bw] body.portal-page .portal-shop-brand__title,
-html[data-bw] body.portal-page .datum-pool-miners__title,
 html[data-bw] body.portal-page .portal-legal-card h3,
 body.portal-page[data-bw] .metric-board-title,
 body.portal-page[data-bw] .portal-overline,
 body.portal-page[data-bw] .portal-shop-fact__key,
 body.portal-page[data-bw] .portal-shop-brand__title,
-body.portal-page[data-bw] .datum-pool-miners__title,
 body.portal-page[data-bw] .portal-legal-card h3 {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   letter-spacing: 0.06em;
@@ -994,9 +992,11 @@ body.portal-page[data-bw] .portal-order-card {
 html[data-bw] body.portal-page .datum-pool-table-wrap,
 html[data-bw] body.portal-page .datum-pool-copy,
 html[data-bw] body.portal-page .datum-pool-source,
+html[data-bw] body.portal-page .datum-pool-card,
 body.portal-page[data-bw] .datum-pool-table-wrap,
 body.portal-page[data-bw] .datum-pool-copy,
-body.portal-page[data-bw] .datum-pool-source {
+body.portal-page[data-bw] .datum-pool-source,
+body.portal-page[data-bw] .datum-pool-card {
   border-radius: 0;
 }
 
@@ -1258,9 +1258,11 @@ body.portal-page[data-bw] .block-carousel__item--mining {
 html[data-bw] body.portal-page .datum-pool-table-wrap,
 html[data-bw] body.portal-page .datum-pool-copy,
 html[data-bw] body.portal-page .datum-pool-source,
+html[data-bw] body.portal-page .datum-pool-card,
 body.portal-page[data-bw] .datum-pool-table-wrap,
 body.portal-page[data-bw] .datum-pool-copy,
-body.portal-page[data-bw] .datum-pool-source {
+body.portal-page[data-bw] .datum-pool-source,
+body.portal-page[data-bw] .datum-pool-card {
   background: transparent;
   border-color: color-mix(in srgb, var(--accent) 18%, transparent);
   box-shadow: none;
@@ -1753,10 +1755,43 @@ body.portal-page .portal-tab-panel {
   gap: var(--portal-space-2);
 }
 
+body.portal-page .datum-pool {
+  --viewer-stack-gap: var(--portal-space-3);
+}
+
 body.portal-page .datum-pool-board {
+  --viewer-stack-gap: var(--portal-space-3);
   display: flex;
   flex-direction: column;
+  gap: var(--viewer-stack-gap);
+}
+
+body.portal-page .datum-pool-board > * {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+body.portal-page .datum-pool-board .metric-board-heading,
+body.portal-page .datum-pool-board .metric-board-title {
+  margin-bottom: 0;
+}
+
+body.portal-page .datum-pool-masthead,
+body.portal-page .datum-pool-intro,
+body.portal-page .datum-pool-stats,
+body.portal-page .datum-pool-footer {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+body.portal-page .datum-pool-masthead,
+body.portal-page .datum-pool-stats {
   gap: var(--portal-space-2);
+}
+
+body.portal-page .datum-pool-intro {
+  gap: var(--portal-space-1);
 }
 
 body.portal-page .datum-pool-lede {
@@ -1783,12 +1818,16 @@ body.portal-page .datum-pool-audit a {
   word-break: break-all;
 }
 
+body.portal-page .datum-pool-footer {
+  gap: var(--portal-space-2);
+}
+
 body.portal-page .datum-pool-progress,
 body.portal-page .datum-pool-connect,
 body.portal-page .datum-pool-miners {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--portal-space-2);
 }
 
 body.portal-page .datum-pool-window-work,
@@ -1798,8 +1837,107 @@ body.portal-page .datum-pool-miner__work {
   font-size: var(--portal-text-caption);
 }
 
-body.portal-page .datum-pool-connect {
-  gap: 6px;
+body.portal-page .datum-pool-progress,
+body.portal-page .datum-pool-nethash,
+body.portal-page .datum-pool-miners,
+body.portal-page .datum-pool-miners__hint,
+body.portal-page .datum-pool-table {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+body.portal-page .datum-pool-connect-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--portal-space-2);
+}
+
+body.portal-page .datum-pool-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--portal-space-2);
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
+  border-radius: var(--portal-radius-md);
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+}
+
+body.portal-page .datum-pool-card__title,
+body.portal-page .datum-pool-miners__title {
+  margin: 0;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--portal-text-caption);
+  font-weight: 650;
+  letter-spacing: var(--portal-track-overline);
+  text-transform: uppercase;
+}
+
+body.portal-page .datum-pool-card__note {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--portal-text-caption);
+  line-height: 1.45;
+}
+
+body.portal-page .datum-pool-nethash {
+  margin: 0;
+}
+
+body.portal-page .datum-pool-nethash__value {
+  color: var(--text);
+}
+
+body.portal-page .datum-pool-nethash__row {
+  display: flex;
+  align-items: center;
+  gap: var(--portal-space-4);
+  min-width: 0;
+}
+
+body.portal-page .datum-pool-nethash__hero {
+  flex: 0 0 auto;
+}
+
+body.portal-page .datum-pool-nethash__metrics {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+body.portal-page .datum-pool-nethash__value {
+  margin: 0;
+  font-size: clamp(1.55rem, 2.8vw, 2.05rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+body.portal-page .datum-pool-nethash__sub,
+body.portal-page .datum-pool-nethash__split,
+body.portal-page .datum-pool-nethash__rates {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--portal-text-caption);
+  line-height: 1.4;
+}
+
+body.portal-page .datum-pool-nethash__bar {
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  body.portal-page .datum-pool-connect-grid {
+    grid-template-columns: 1fr;
+  }
+
+  body.portal-page .datum-pool-nethash__row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--portal-space-2);
+  }
 }
 
 body.portal-page .datum-pool-copy,
@@ -1829,6 +1967,12 @@ body.portal-page .datum-pool-source:hover {
   border-color: var(--accent);
 }
 
+body.portal-page .datum-pool-copy--static,
+body.portal-page .datum-pool-copy--static:hover {
+  cursor: default;
+  border-color: color-mix(in srgb, var(--border) 40%, transparent);
+}
+
 body.portal-page .datum-pool-copy__label,
 body.portal-page .datum-pool-source {
   color: var(--muted);
@@ -1848,15 +1992,6 @@ body.portal-page .datum-pool-copy.is-copied .datum-pool-copy__value {
   color: var(--accent);
 }
 
-body.portal-page .datum-pool-miners__title {
-  margin: 0;
-  color: var(--accent);
-  font-size: var(--portal-text-overline);
-  font-weight: 700;
-  letter-spacing: var(--portal-track-overline);
-  text-transform: uppercase;
-}
-
 body.portal-page .datum-pool-miners__hint {
   margin: 0;
   color: var(--muted);
@@ -1873,7 +2008,7 @@ body.portal-page .datum-pool-table-wrap {
 
 body.portal-page .datum-pool-table {
   width: 100%;
-  min-width: 720px;
+  min-width: 820px;
   border-collapse: collapse;
   color: var(--text);
   font-size: var(--portal-text-body);
@@ -1900,7 +2035,8 @@ body.portal-page .datum-pool-table tbody tr:last-child td {
   border-bottom: none;
 }
 
-body.portal-page .datum-pool-table__rank {
+body.portal-page .datum-pool-table__rank,
+body.portal-page .datum-pool-table__kind {
   width: 1%;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
@@ -3433,6 +3569,24 @@ body[data-theme="ocean"].portal-page .portal-kpi-strip--in-board {
 .portal-kpi-strip--in-board .portal-kpi {
   padding: 6px 8px;
   gap: 2px;
+}
+
+@media (min-width: 769px) {
+  body.portal-page .datum-pool-board .portal-kpi-strip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  body.portal-page .datum-pool-board .portal-kpi {
+    padding: 6px 6px;
+  }
+
+  body.portal-page .datum-pool-board .portal-kpi-label {
+    white-space: nowrap;
+  }
+
+  body.portal-page .datum-pool-board .portal-kpi-value {
+    font-size: clamp(13px, 1.15vw, 16px);
+  }
 }
 
 body.portal-page .metric-board--chain .portal-kpi-strip {
@@ -7055,6 +7209,18 @@ body.settings-page.settings-setup-visible .settings-config-sidebar {
   /* Hero metrics: compact KPI strip on mobile */
   body.portal-page .portal-kpi-strip {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  body.portal-page .datum-pool-board .portal-kpi-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body.portal-page .datum-pool-board .portal-kpi:nth-child(2n) {
+    border-right: none;
+  }
+
+  body.portal-page .datum-pool-board .portal-kpi:nth-child(n + 3) {
+    border-top: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
   }
 
   body.portal-page .portal-kpi:nth-child(3n) {

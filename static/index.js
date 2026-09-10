@@ -663,7 +663,9 @@ let lastDatumPool = null;
 let poolShareView = "pool";
 let poolShareOpen = false;
 const DATUM_POOL_NOTE =
-  "This is not PPS and not public Stratum. It is a DATUM-only pool. Users run their own node + DATUM gateway, point the gateway at pool.blockvase.com:28915, and payouts happen directly in the coinbase split when the pool finds a block.";
+  "Do not point public ASIC firmware at the DATUM port.";
+const DATUM_POOL_SOURCE_FALLBACK = "http://pool.blockvase.com:28916/";
+const DATUM_POOL_PRIVATE_PORTS = { 7152: 1, 7153: 1, 8332: 1, 23334: 1, 28916: 1, 28917: 1, 28918: 1 };
 
 function datumPoolObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : null;
@@ -710,28 +712,104 @@ function datumPoolFeeLabel(info, pool) {
   return "0%";
 }
 
+function datumPoolPortNumber(value) {
+  const port = Number(value);
+  return Number.isFinite(port) && port > 0 ? port : null;
+}
+
+function datumPoolPrivatePort(port) {
+  return !!DATUM_POOL_PRIVATE_PORTS[port];
+}
+
+function datumPoolHostPort(value, allowedPorts) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  let host = "";
+  let port = null;
+  try {
+    const parsed = new URL(text.replace(/^stratum\+tcp:/i, "http:"));
+    host = String(parsed.hostname || "").trim();
+    port = datumPoolPortNumber(parsed.port);
+  } catch (_err) {
+    const cleaned = text.replace(/^[a-z0-9+]+:\/\//i, "");
+    const cut = cleaned.split("/")[0] || "";
+    const colon = cut.lastIndexOf(":");
+    if (colon > 0) {
+      host = cut.slice(0, colon).trim();
+      port = datumPoolPortNumber(cut.slice(colon + 1));
+    } else {
+      host = cut.trim();
+    }
+  }
+  if (!host || datumPoolPrivatePort(port)) return null;
+  if (allowedPorts && allowedPorts.length && (port == null || allowedPorts.indexOf(port) === -1)) return null;
+  return { host: host, port: port };
+}
+
+function datumPoolEndpoints(pool, kind) {
+  const rows = Array.isArray(pool && pool.endpoints) ? pool.endpoints : [];
+  const want = String(kind || "").toLowerCase();
+  return rows.filter(function (row) {
+    return row && typeof row === "object" && String(row.kind || "").toLowerCase() === want;
+  });
+}
+
 function datumPoolEndpoint(pool) {
   const links = datumPoolObject(pool.links) || {};
   const info = datumPoolObject(pool.pool) || {};
-  const linked = String(links.datum_endpoint || "").trim();
-  if (linked) return linked;
-  const host = String(info.datum_host || "").trim();
-  const port = info.datum_port;
-  if (host && port != null && String(port).trim()) return host + ":" + String(port).trim();
-  return host;
+  const ep = datumPoolEndpoints(pool, "datum")[0] || {};
+  const parsed = datumPoolHostPort(links.datum_endpoint, [28915]) ||
+    datumPoolHostPort(ep.url || ep.endpoint || ep.host, [28915]);
+  const host = String((parsed && parsed.host) || info.datum_host || "").trim();
+  const port = datumPoolPortNumber((parsed && parsed.port) != null ? parsed.port : info.datum_port) || 28915;
+  if (!host || port !== 28915 || datumPoolPrivatePort(port)) return "";
+  return host + ":" + String(port);
+}
+
+function datumPoolStratumConnect(pool) {
+  const links = datumPoolObject(pool.links) || {};
+  const info = datumPoolObject(pool.pool) || {};
+  const ep = datumPoolEndpoints(pool, "stratum_v1")[0] || {};
+  const rawUrl = String(info.stratum_v1_url || links.stratum_v1 || ep.url || ep.endpoint || "").trim();
+  const parsed = datumPoolHostPort(rawUrl, [3333]);
+  const host = String((parsed && parsed.host) || info.stratum_v1_host || ep.host || "").trim();
+  const port = datumPoolPortNumber((parsed && parsed.port) != null ? parsed.port : (info.stratum_v1_port != null ? info.stratum_v1_port : ep.port));
+  const present = !!(rawUrl || info.stratum_v1_url || info.stratum_v1_host || links.stratum_v1 || ep.kind);
+  if (!present || !host || port !== 3333 || datumPoolPrivatePort(port)) return null;
+  return {
+    url: rawUrl && parsed ? rawUrl : "stratum+tcp://" + host + ":3333",
+    host: host,
+    port: 3333,
+    username: "your Bitcoin address (optional .worker)",
+    password: "any value (required)",
+    pow: (!info.stratum_v1_pow || String(info.stratum_v1_pow).trim().toLowerCase() === "blake2b")
+      ? "BLAKE2b"
+      : String(info.stratum_v1_pow).trim(),
+  };
+}
+
+function datumPoolPublicSourceHref(raw) {
+  const text = String(raw || "").trim() || DATUM_POOL_SOURCE_FALLBACK;
+  try {
+    const parsed = new URL(text);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
+    const port = datumPoolPortNumber(parsed.port);
+    if (port != null && port !== 28916 && datumPoolPrivatePort(port)) return "";
+    if (parsed.hostname === "pool.blockvase.com" && (port === 28916 || parsed.href === DATUM_POOL_SOURCE_FALLBACK)) {
+      return "http://pool.blockvase.com:28916/";
+    }
+    if (port === 28916) return parsed.href;
+    if (port != null && datumPoolPrivatePort(port)) return "";
+    return parsed.href;
+  } catch (_err) {
+    return "";
+  }
 }
 
 function datumPoolSourceUrl(pool) {
   const links = datumPoolObject(pool.links) || {};
   const info = datumPoolObject(pool.pool) || {};
-  const raw = String(links.source || info.source_url || "").trim();
-  try {
-    const parsed = new URL(raw);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
-    return parsed.href;
-  } catch (_err) {
-    return "";
-  }
+  return datumPoolPublicSourceHref(links.source || info.source_url || DATUM_POOL_SOURCE_FALLBACK);
 }
 
 function datumPoolWindowPct(pool) {
@@ -774,6 +852,221 @@ function formatDatumPercent(n, digits) {
   return value.toFixed(places).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1") + "%";
 }
 
+function formatNethashSharePercent(n) {
+  const value = Number(n);
+  if (!Number.isFinite(value)) return "N/A";
+  const abs = Math.abs(value);
+  const digits = abs >= 10 ? 1 : abs >= 1 ? 2 : abs >= 0.1 ? 2 : 3;
+  return formatDatumPercent(value, digits);
+}
+
+const NETHASH_SHARE_NOTE =
+  "Newest public miners are disconnected first at the cap. DATUM clients are not kicked.";
+
+function datumPoolFiniteNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function datumPoolFlag(value) {
+  if (value === false || value === "false" || value === 0 || value === "0") return false;
+  if (value === true || value === "true" || value === 1 || value === "1") return true;
+  return null;
+}
+
+function datumPoolNethashView(pool) {
+  if (!datumPoolUsable(pool)) return null;
+  const nethash = datumPoolObject(pool.nethash) || {};
+  const status = datumPoolObject(pool.status) || {};
+  const hasNethash = Object.keys(nethash).length > 0;
+  const hasStatusExtras =
+    status.network_share_percent != null ||
+    status.nethash_cap_percent != null ||
+    status.nethash_blocks != null ||
+    status.sv1_admit != null ||
+    status.public_open != null;
+  if (!hasNethash && !hasStatusExtras) return null;
+
+  const networkHs = datumPoolFiniteNumber(nethash.network_hs);
+  const showPercents = networkHs != null && networkHs > 0;
+  const poolHs = datumPoolFiniteNumber(nethash.pool_hs);
+  const datumHs = datumPoolFiniteNumber(nethash.datum_hs);
+  const sv1Hs = datumPoolFiniteNumber(nethash.sv1_hs);
+
+  let poolPercent = datumPoolFiniteNumber(nethash.pool_percent);
+  if (poolPercent == null) {
+    const frac = datumPoolFiniteNumber(nethash.pool_fraction);
+    poolPercent = frac != null ? frac * 100 : datumPoolFiniteNumber(status.network_share_percent);
+  }
+  if (poolPercent == null && showPercents) poolPercent = 0;
+
+  let capPercent = datumPoolFiniteNumber(nethash.cap_percent);
+  if (capPercent == null) {
+    const capFrac = datumPoolFiniteNumber(nethash.cap_fraction);
+    capPercent = capFrac != null ? capFrac * 100 : datumPoolFiniteNumber(status.nethash_cap_percent);
+  }
+  if (capPercent == null || capPercent <= 0) capPercent = 25;
+
+  let remainingPercent = datumPoolFiniteNumber(nethash.remaining_percent);
+  if (remainingPercent == null && poolPercent != null) {
+    remainingPercent = Math.max(0, capPercent - poolPercent);
+  }
+
+  let datumPercent = datumPoolFiniteNumber(nethash.datum_percent);
+  if (datumPercent == null) {
+    const frac = datumPoolFiniteNumber(nethash.datum_fraction);
+    if (frac != null) datumPercent = frac * 100;
+    else if (poolHs != null && poolHs > 0 && datumHs != null) datumPercent = (datumHs / poolHs) * 100;
+    else if (showPercents && datumHs != null) datumPercent = (datumHs / networkHs) * 100;
+  }
+
+  let sv1Percent = datumPoolFiniteNumber(nethash.sv1_percent);
+  if (sv1Percent == null) {
+    const frac = datumPoolFiniteNumber(nethash.sv1_fraction);
+    if (frac != null) sv1Percent = frac * 100;
+    else if (poolHs != null && poolHs > 0 && sv1Hs != null) sv1Percent = (sv1Hs / poolHs) * 100;
+    else if (showPercents && sv1Hs != null) sv1Percent = (sv1Hs / networkHs) * 100;
+  }
+
+  let publicOpen = datumPoolFlag(nethash.public_open);
+  if (publicOpen == null) publicOpen = datumPoolFlag(status.public_open);
+  if (publicOpen == null) {
+    const admit = datumPoolFlag(nethash.sv1_admit);
+    publicOpen = admit != null ? admit : datumPoolFlag(status.sv1_admit) !== false;
+  }
+
+  const blocks = datumPoolFiniteNumber(nethash.blocks) || datumPoolFiniteNumber(status.nethash_blocks) || 120;
+  const meaning = String(nethash.meaning || pool.nethash_meaning || NETHASH_SHARE_NOTE).trim();
+  const fill = showPercents && poolPercent != null && capPercent > 0
+    ? Math.max(0, Math.min(100, (poolPercent / capPercent) * 100))
+    : null;
+
+  return {
+    blocks: blocks,
+    showPercents: showPercents,
+    poolPercent: poolPercent,
+    capPercent: capPercent,
+    remainingPercent: remainingPercent,
+    datumPercent: datumPercent,
+    sv1Percent: sv1Percent,
+    publicOpen: publicOpen !== false,
+    poolHs: poolHs,
+    networkHs: networkHs,
+    fill: fill,
+    meaning: meaning,
+  };
+}
+
+function datumPoolNethashCardHtml(pool) {
+  const view = datumPoolNethashView(pool);
+  if (!view) return "";
+  const title = "Network share (last " + String(view.blocks) + " blocks)";
+  const valueHtml = view.showPercents
+    ? '<p class="datum-pool-nethash__value">' + escapeHtml(formatNethashSharePercent(view.poolPercent)) + "</p>"
+    : "";
+  const metricLines = [];
+  if (view.showPercents) {
+    metricLines.push(
+      '<p class="datum-pool-nethash__sub">' +
+      escapeHtml(formatDatumPercent(view.capPercent, Number.isInteger(view.capPercent) ? 0 : 1)) +
+      " cap</p>"
+    );
+  }
+  if (view.showPercents && (view.datumPercent != null || view.sv1Percent != null)) {
+    metricLines.push(
+      '<p class="datum-pool-nethash__split">DATUM ' +
+      escapeHtml(formatNethashSharePercent(view.datumPercent)) +
+      "  ·  Stratum " +
+      escapeHtml(formatNethashSharePercent(view.sv1Percent)) +
+      "</p>"
+    );
+  }
+  const rates = [];
+  if (view.poolHs != null && view.poolHs > 0) rates.push(formatDatumHashrate(view.poolHs));
+  if (view.networkHs != null && view.networkHs > 0) rates.push(formatDatumHashrate(view.networkHs));
+  if (rates.length) {
+    metricLines.push('<p class="datum-pool-nethash__rates">' + escapeHtml(rates.join(" / ")) + "</p>");
+  }
+  const barHtml = view.fill != null
+    ? '<div class="datum-pool-nethash__bar portal-retarget-bar pool-share-retarget">' +
+      '<div class="portal-retarget-track" role="progressbar" aria-valuemin="0" aria-valuemax="' +
+      escapeHtml(String(view.capPercent)) +
+      '" aria-valuenow="' +
+      escapeHtml(String(view.poolPercent)) +
+      '" aria-label="Network share of ' +
+      escapeHtml(formatDatumPercent(view.capPercent, Number.isInteger(view.capPercent) ? 0 : 1)) +
+      ' cap">' +
+      '<div class="portal-retarget-fill" style="width:' +
+      view.fill +
+      '%"></div></div></div>'
+    : "";
+  return (
+    '<article class="datum-pool-card datum-pool-nethash">' +
+    '<h3 class="datum-pool-card__title">' +
+    escapeHtml(title) +
+    "</h3>" +
+    '<div class="datum-pool-nethash__row">' +
+    '<div class="datum-pool-nethash__hero">' +
+    valueHtml +
+    "</div>" +
+    (metricLines.length ? '<div class="datum-pool-nethash__metrics">' + metricLines.join("") + "</div>" : "") +
+    "</div>" +
+    barHtml +
+    '<p class="datum-pool-card__note">' +
+    escapeHtml(view.meaning) +
+    "</p></article>"
+  );
+}
+
+function formatDatumBps(bps, fallback) {
+  const value = Number(bps);
+  if (!Number.isFinite(value)) return fallback;
+  return formatDatumPercent(value / 100, Math.abs(value) >= 100 ? 1 : 2);
+}
+
+function datumPoolHashrateWindowLabel(pool) {
+  const sec = Number((datumPoolObject(pool && pool.status) || {}).hashrate_window_sec);
+  if (!Number.isFinite(sec) || sec <= 0 || sec === 10800) return "3h avg";
+  if (sec % 3600 === 0) return String(sec / 3600) + "h avg";
+  if (sec % 60 === 0) return String(sec / 60) + "m avg";
+  return String(sec) + "s avg";
+}
+
+function datumPoolMinerKindLabel(row) {
+  const raw = String(row && row.kind || "").trim().toLowerCase();
+  if (raw === "sv1" || raw === "stratum_v1" || raw === "stratum") return "SV1";
+  if (raw === "mixed") return "Mixed";
+  if (raw === "datum") return "DATUM";
+  return raw ? raw.toUpperCase() : "—";
+}
+
+function datumPoolDatumFeeNote(info) {
+  const until = formatDatumBps(info.fee_until_first_block_bps, "0%");
+  const after = formatDatumBps(info.fee_after_first_block_bps, "0.21%");
+  return until + " until the first pool block, then " + after + " of DATUM window work.";
+}
+
+function datumPoolStratumFeeNote(info) {
+  const fee = formatDatumBps(info.stratum_v1_fee_bps, "2.3%");
+  const keepRaw = Number(info.stratum_v1_miner_keep_percent);
+  const keep = Number.isFinite(keepRaw)
+    ? formatDatumPercent(keepRaw, Number.isInteger(keepRaw) ? 0 : 1)
+    : "97.7%";
+  const rebate = formatDatumBps(info.stratum_v1_datum_rebate_bps, "2%");
+  const leftover = formatDatumBps(info.stratum_v1_operator_bps, "0.3%");
+  return (
+    "Fee: " +
+    fee +
+    " of public work. You keep " +
+    keep +
+    " of yours. " +
+    rebate +
+    " of public work is rebated to DATUM miners in the window. " +
+    leftover +
+    " is pool leftover."
+  );
+}
+
 function shortenDatumHex(value, head, tail) {
   const text = String(value || "").trim();
   const start = head || 10;
@@ -810,7 +1103,7 @@ function datumPoolMinerId(row) {
 
 function datumPoolMinersTableHtml(miners) {
   if (!miners.length) {
-    return '<p class="datum-pool-miner--empty">No identities in the split yet. Connected gateways appear after their first accepted share.</p>';
+    return '<p class="datum-pool-miner--empty">No identities in the split yet. DATUM and Stratum identities appear after their first accepted share.</p>';
   }
   return (
     '<div class="datum-pool-table-wrap">' +
@@ -818,8 +1111,9 @@ function datumPoolMinersTableHtml(miners) {
     '<thead><tr>' +
     '<th scope="col">Rank</th>' +
     '<th scope="col">Username</th>' +
+    '<th scope="col">Kind</th>' +
     '<th scope="col">Window work</th>' +
-    '<th scope="col">Split %</th>' +
+    '<th scope="col">Window %</th>' +
     '<th scope="col">Hashrate</th>' +
     '<th scope="col">Hash %</th>' +
     "</tr></thead><tbody>" +
@@ -835,6 +1129,9 @@ function datumPoolMinersTableHtml(miners) {
           escapeHtml(id) +
           '">' +
           escapeHtml(id) +
+          "</td>" +
+          '<td class="datum-pool-table__kind">' +
+          escapeHtml(datumPoolMinerKindLabel(row)) +
           "</td>" +
           '<td class="datum-pool-table__num">' +
           escapeHtml(formatDatumWork(row.work)) +
@@ -859,6 +1156,17 @@ function datumPoolMinersTableHtml(miners) {
 function datumPoolCopyControl(label, value, kind) {
   const text = String(value || "").trim();
   if (!text) return "";
+  if (kind === "hint") {
+    return (
+      '<div class="datum-pool-copy datum-pool-copy--static">' +
+      '<span class="datum-pool-copy__label">' +
+      escapeHtml(label) +
+      "</span>" +
+      '<span class="datum-pool-copy__value">' +
+      escapeHtml(text) +
+      "</span></div>"
+    );
+  }
   return (
     '<button type="button" class="datum-pool-copy" data-datum-copy="' +
     escapeHtml(text) +
@@ -879,12 +1187,42 @@ function datumPoolCopyControl(label, value, kind) {
 function datumPoolUnavailableHtml() {
   return (
     '<section class="metric-board metric-board--dense datum-pool-board">' +
+    '<div class="datum-pool-masthead">' +
     '<div class="metric-board-heading"><h2 class="metric-board-title">DATUM pool</h2></div>' +
+    '<div class="datum-pool-intro">' +
     '<p class="datum-pool-lede">Pool status is unavailable.</p>' +
     '<p class="muted-note datum-pool-note">' +
     escapeHtml(DATUM_POOL_NOTE) +
-    "</p></section>"
+    "</p></div></div></section>"
   );
+}
+
+function datumPoolConnectCardsHtml(pool, info) {
+  const endpoint = datumPoolEndpoint(pool);
+  const pubkey = String(info.pool_pubkey || "").trim();
+  const stratum = datumPoolStratumConnect(pool);
+  const datumCard =
+    '<article class="datum-pool-card">' +
+    '<h3 class="datum-pool-card__title">DATUM</h3>' +
+    '<p class="datum-pool-card__note">' +
+    escapeHtml(datumPoolDatumFeeNote(info) + " " + DATUM_POOL_NOTE) +
+    "</p>" +
+    datumPoolCopyControl("DATUM", endpoint) +
+    datumPoolCopyControl("Pool pubkey", pubkey, "hex") +
+    "</article>";
+  const stratumCard = stratum
+    ? '<article class="datum-pool-card">' +
+      '<h3 class="datum-pool-card__title">Stratum V1</h3>' +
+      '<p class="datum-pool-card__note">' +
+      escapeHtml(datumPoolStratumFeeNote(info)) +
+      "</p>" +
+      datumPoolCopyControl("Stratum V1", stratum.url) +
+      datumPoolCopyControl("User", stratum.username) +
+      datumPoolCopyControl("Pass", stratum.password, "hint") +
+      datumPoolCopyControl("Algo", stratum.pow || "BLAKE2b") +
+      "</article>"
+    : "";
+  return '<div class="datum-pool-connect-grid">' + datumCard + stratumCard + "</div>";
 }
 
 function datumPoolBoardHtml(pool) {
@@ -893,14 +1231,22 @@ function datumPoolBoardHtml(pool) {
   const status = datumPoolObject(pool.status) || {};
   const window = datumPoolObject(pool.window) || {};
   const name = String(info.name || "DATUM pool").trim() || "DATUM pool";
-  const style = String(info.style || "").trim();
-  const endpoint = datumPoolEndpoint(pool);
-  const pubkey = String(info.pool_pubkey || "").trim();
+  const style = String(info.style || "").trim() ||
+    "Non-custodial DATUM with an 8×-nethash rolling work window.";
+  const maxSplit = Number(info.max_split_outputs);
+  const minPayout = Number(info.min_payout_sats);
+  const styleFacts = [];
+  if (Number.isFinite(maxSplit) && maxSplit > 0) styleFacts.push("Max " + formatNumber(maxSplit) + " split outputs");
+  if (Number.isFinite(minPayout) && minPayout > 0) styleFacts.push("Min payout " + formatNumber(minPayout) + " sats");
   const source = datumPoolSourceUrl(pool);
-  const asOf = formatMetricsAsOf(pool.updated_at);
   const progress = datumPoolWindowPct(pool);
   const progressWidth = Number.isFinite(progress) ? Math.max(0, Math.min(100, progress)) : 0;
   const miners = datumPoolMiners(pool);
+  const meaning = String(pool.window_percent_meaning || "").trim();
+  const minerHint = meaning ||
+    "Window % is the payout split. Hash % is the " +
+    datumPoolHashrateWindowLabel(pool).replace(" avg", "") +
+    " accepted-work share.";
   const sourceHtml = source
     ? '<a class="datum-pool-source" href="' +
       escapeHtml(source) +
@@ -908,29 +1254,29 @@ function datumPoolBoardHtml(pool) {
     : "";
   return (
     '<section class="metric-board metric-board--dense datum-pool-board">' +
+    '<div class="datum-pool-masthead">' +
     '<div class="metric-board-heading">' +
     '<h2 class="metric-board-title">' +
     escapeHtml(name) +
     "</h2>" +
-    (asOf ? '<p class="metric-board-asof">As of ' + escapeHtml(asOf) + "</p>" : "") +
     "</div>" +
-    (style ? '<p class="datum-pool-lede">' + escapeHtml(style) + "</p>" : "") +
-    '<p class="muted-note datum-pool-note">' +
-    escapeHtml(DATUM_POOL_NOTE) +
-    "</p>" +
-    '<p class="muted-note datum-pool-audit">' +
-    "The TIDES window is auditable via the public stats API: " +
-    '<a href="/api/pool">/api/pool</a>' +
-    " · " +
-    '<a href="/api/shares">/api/shares</a>' +
-    "</p>" +
+    '<div class="datum-pool-intro">' +
+    '<p class="datum-pool-lede">' +
+    escapeHtml((function () {
+      let lede = style.replace(/\s+$/, "");
+      if (lede && !/[.!?]$/.test(lede)) lede += ".";
+      if (styleFacts.length) lede += (lede ? " " : "") + styleFacts.join(". ") + ".";
+      return lede;
+    })()) +
+    "</p></div></div>" +
+    '<div class="datum-pool-connect">' +
+    datumPoolConnectCardsHtml(pool, info) +
+    "</div>" +
+    '<div class="datum-pool-stats">' +
     portalKpiStrip(
       [
-        portalKpiHtml("Hashrate", formatDatumHashrate(status.hashrate_hs), { highlight: true, unit: "3h avg" }),
-        portalKpiHtml("Gateways", formatNumber(Number(status.connected_datum_clients) || 0), { unit: "connected" }),
-        portalKpiHtml("Identities", formatNumber(miners.length), { unit: "in split" }),
-        portalKpiHtml("Fee", datumPoolFeeLabel(info, pool)),
-        portalKpiHtml("Window", formatDatumPercent(progress)),
+        portalKpiHtml("Hashrate", formatDatumHashrate(status.hashrate_hs), { highlight: true, unit: datumPoolHashrateWindowLabel(pool) }),
+        portalKpiHtml("DATUM clients", formatNumber(Number(status.connected_datum_clients) || 0), { unit: "sessions" }),
         portalKpiHtml("Shares", formatNumber(Number(status.shares) || 0)),
         portalKpiHtml("Blocks", formatNumber(Number(status.blocks_found) || 0), { unit: "found" }),
       ],
@@ -941,11 +1287,12 @@ function datumPoolBoardHtml(pool) {
     '<span class="portal-retarget-label">Window</span>' +
     '<span class="portal-retarget-meta">' +
     escapeHtml(formatDatumPercent(progress)) +
+    " of target work" +
     (window.description ? " · " + escapeHtml(String(window.description)) : "") +
     "</span></div>" +
     '<div class="portal-retarget-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' +
     escapeHtml(String(progressWidth)) +
-    '" aria-label="DATUM window progress">' +
+    '" aria-label="Pool work window fill">' +
     '<div class="portal-retarget-fill" style="width:' +
     progressWidth +
     '%"></div></div>' +
@@ -953,16 +1300,22 @@ function datumPoolBoardHtml(pool) {
     escapeHtml(formatDatumWork(window.current_work != null ? window.current_work : status.work)) +
     " / " +
     escapeHtml(formatDatumWork(window.target_work != null ? window.target_work : status.window)) +
-    "</p></div>" +
-    '<div class="datum-pool-connect">' +
-    datumPoolCopyControl("C_DATUM_PRIME ENDPOINT", endpoint) +
-    datumPoolCopyControl("Pool pubkey", pubkey, "hex") +
-    sourceHtml +
-    "</div>" +
+    "</p></div></div>" +
+    datumPoolNethashCardHtml(pool) +
     '<div class="datum-pool-miners">' +
     '<h3 class="datum-pool-miners__title">Payout identities</h3>' +
-    '<p class="datum-pool-miners__hint">Split % is the paid coinbase split. Hash % is the 3h accepted-work share.</p>' +
+    '<p class="datum-pool-miners__hint">' +
+    escapeHtml(minerHint) +
+    "</p>" +
     datumPoolMinersTableHtml(miners) +
+    "</div>" +
+    '<div class="datum-pool-footer">' +
+    '<p class="muted-note datum-pool-audit">' +
+    '<a href="/api/pool">/api/pool</a>' +
+    " · " +
+    '<a href="/api/shares">/api/shares</a>' +
+    "</p>" +
+    sourceHtml +
     "</div></section>"
   );
 }
