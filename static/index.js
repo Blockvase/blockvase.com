@@ -861,7 +861,7 @@ function formatNethashSharePercent(n) {
 }
 
 const NETHASH_SHARE_NOTE =
-  "Newest public miners are disconnected first at the cap. DATUM clients are not kicked.";
+  "At the cap, newest public miners disconnect first. DATUM is not kicked.";
 
 function datumPoolFiniteNumber(value) {
   const n = Number(value);
@@ -936,7 +936,7 @@ function datumPoolNethashView(pool) {
   }
 
   const blocks = datumPoolFiniteNumber(nethash.blocks) || datumPoolFiniteNumber(status.nethash_blocks) || 120;
-  const meaning = String(nethash.meaning || pool.nethash_meaning || NETHASH_SHARE_NOTE).trim();
+  const meaning = NETHASH_SHARE_NOTE;
   const fill = showPercents && poolPercent != null && capPercent > 0
     ? Math.max(0, Math.min(100, (poolPercent / capPercent) * 100))
     : null;
@@ -957,64 +957,116 @@ function datumPoolNethashView(pool) {
   };
 }
 
-function datumPoolNethashCardHtml(pool) {
+function datumPoolFactValue(text, unit, highlight) {
+  let html = highlight
+    ? '<span class="highlight">' + escapeHtml(text) + "</span>"
+    : escapeHtml(text);
+  if (unit) html += ' <span class="portal-kv-unit">' + escapeHtml(unit) + "</span>";
+  return html;
+}
+
+function datumPoolMetricsHtml(pool) {
+  const status = datumPoolObject(pool && pool.status) || {};
   const view = datumPoolNethashView(pool);
-  if (!view) return "";
-  const title = "Network share (last " + String(view.blocks) + " blocks)";
-  const valueHtml = view.showPercents
-    ? '<p class="datum-pool-nethash__value">' + escapeHtml(formatNethashSharePercent(view.poolPercent)) + "</p>"
-    : "";
-  const metricLines = [];
-  if (view.showPercents) {
-    metricLines.push(
-      '<p class="datum-pool-nethash__sub">' +
-      escapeHtml(formatDatumPercent(view.capPercent, Number.isInteger(view.capPercent) ? 0 : 1)) +
-      " cap</p>"
+  const poolCluster = metricClusterHtml(
+    "Pool",
+    metricKvHtml([
+      [
+        "Hashrate",
+        datumPoolFactValue(
+          formatDatumHashrate(status.hashrate_hs),
+          datumPoolHashrateWindowLabel(pool),
+          true
+        ),
+      ],
+      ["DATUM clients", formatNumber(Number(status.connected_datum_clients) || 0)],
+      ["SV1 clients", formatNumber(Number(status.connected_sv1_clients) || 0)],
+      ["Shares", formatNumber(Number(status.shares) || 0)],
+      [
+        "Blocks",
+        datumPoolFactValue(
+          formatNumber(Number(status.blocks_found) || 0) +
+            " / " +
+            formatNumber(datumPoolEmptyCount(pool, "empty_finds")) +
+            " / " +
+            formatNumber(datumPoolEmptyCount(pool, "empty_unsettled")),
+          "found / empty / unsettled"
+        ),
+      ],
+    ])
+  );
+  let shareCluster = "";
+  if (view) {
+    const rates = [];
+    if (view.poolHs != null && view.poolHs > 0) rates.push(formatDatumHashrate(view.poolHs));
+    if (view.networkHs != null && view.networkHs > 0) rates.push(formatDatumHashrate(view.networkHs));
+    shareCluster = metricClusterHtml(
+      "Network share (last " + String(view.blocks) + " blocks)",
+      metricKvHtml([
+        [
+          "Share",
+          datumPoolFactValue(
+            view.showPercents ? formatNethashSharePercent(view.poolPercent) : "N/A",
+            "",
+            true
+          ),
+        ],
+        [
+          "Cap",
+          formatDatumPercent(view.capPercent, Number.isInteger(view.capPercent) ? 0 : 1),
+        ],
+        [
+          "DATUM",
+          view.showPercents && view.datumPercent != null
+            ? formatNethashSharePercent(view.datumPercent)
+            : "N/A",
+        ],
+        [
+          "Stratum",
+          view.showPercents && view.sv1Percent != null
+            ? formatNethashSharePercent(view.sv1Percent)
+            : "N/A",
+        ],
+        ["Pool / network", rates.length ? rates.join(" / ") : "N/A"],
+      ])
     );
   }
-  if (view.showPercents && (view.datumPercent != null || view.sv1Percent != null)) {
-    metricLines.push(
-      '<p class="datum-pool-nethash__split">DATUM ' +
-      escapeHtml(formatNethashSharePercent(view.datumPercent)) +
-      "  ·  Stratum " +
-      escapeHtml(formatNethashSharePercent(view.sv1Percent)) +
-      "</p>"
-    );
-  }
-  const rates = [];
-  if (view.poolHs != null && view.poolHs > 0) rates.push(formatDatumHashrate(view.poolHs));
-  if (view.networkHs != null && view.networkHs > 0) rates.push(formatDatumHashrate(view.networkHs));
-  if (rates.length) {
-    metricLines.push('<p class="datum-pool-nethash__rates">' + escapeHtml(rates.join(" / ")) + "</p>");
-  }
-  const barHtml = view.fill != null
-    ? '<div class="datum-pool-nethash__bar portal-retarget-bar pool-share-retarget">' +
-      '<div class="portal-retarget-track" role="progressbar" aria-valuemin="0" aria-valuemax="' +
-      escapeHtml(String(view.capPercent)) +
-      '" aria-valuenow="' +
-      escapeHtml(String(view.poolPercent)) +
-      '" aria-label="Network share of ' +
-      escapeHtml(formatDatumPercent(view.capPercent, Number.isInteger(view.capPercent) ? 0 : 1)) +
-      ' cap">' +
-      '<div class="portal-retarget-fill" style="width:' +
-      view.fill +
-      '%"></div></div></div>'
-    : "";
   return (
-    '<article class="datum-pool-card datum-pool-nethash">' +
-    '<h3 class="datum-pool-card__title">' +
-    escapeHtml(title) +
-    "</h3>" +
-    '<div class="datum-pool-nethash__row">' +
-    '<div class="datum-pool-nethash__hero">' +
-    valueHtml +
+    '<div class="datum-pool-metrics">' +
+    '<div class="metric-cluster-grid datum-pool-metrics__grid">' +
+    poolCluster +
+    shareCluster +
     "</div>" +
-    (metricLines.length ? '<div class="datum-pool-nethash__metrics">' + metricLines.join("") + "</div>" : "") +
-    "</div>" +
-    barHtml +
-    '<p class="datum-pool-card__note">' +
-    escapeHtml(view.meaning) +
-    "</p></article>"
+    datumPoolWindowBarHtml(pool) +
+    '<p class="datum-pool-miners__hint">' +
+    escapeHtml(NETHASH_SHARE_NOTE) +
+    "</p></div>"
+  );
+}
+
+function datumPoolWindowBarHtml(pool) {
+  const status = datumPoolObject(pool && pool.status) || {};
+  const window = datumPoolObject(pool && pool.window) || {};
+  const progress = datumPoolWindowPct(pool);
+  const progressWidth = Number.isFinite(progress) ? Math.max(0, Math.min(100, progress)) : 0;
+  return (
+    '<div class="datum-pool-progress portal-retarget-bar pool-share-retarget">' +
+    '<div class="portal-retarget-head">' +
+    '<span class="portal-retarget-label">Window</span>' +
+    '<span class="portal-retarget-meta">' +
+    escapeHtml(formatDatumPercent(progress)) +
+    " of target · " +
+    escapeHtml(formatDatumWork(window.current_work != null ? window.current_work : status.work)) +
+    " / " +
+    escapeHtml(formatDatumWork(window.target_work != null ? window.target_work : status.window)) +
+    (window.description ? " · " + escapeHtml(String(window.description)) : "") +
+    "</span></div>" +
+    '<div class="portal-retarget-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' +
+    escapeHtml(String(progressWidth)) +
+    '" aria-label="Pool work window fill">' +
+    '<div class="portal-retarget-fill" style="width:' +
+    progressWidth +
+    '%"></div></div></div>'
   );
 }
 
@@ -1043,7 +1095,7 @@ function datumPoolMinerKindLabel(row) {
 function datumPoolDatumFeeNote(info) {
   const until = formatDatumBps(info.fee_until_first_block_bps, "0%");
   const after = formatDatumBps(info.fee_after_first_block_bps, "0.21%");
-  return until + " until the first pool block, then " + after + " of DATUM window work.";
+  return until + " until the first pool block, then " + after + ".";
 }
 
 function datumPoolStratumFeeNote(info) {
@@ -1055,15 +1107,14 @@ function datumPoolStratumFeeNote(info) {
   const rebate = formatDatumBps(info.stratum_v1_datum_rebate_bps, "2%");
   const leftover = formatDatumBps(info.stratum_v1_operator_bps, "0.3%");
   return (
-    "Fee: " +
     fee +
     " of public work. You keep " +
     keep +
-    " of yours. " +
+    ". " +
     rebate +
-    " of public work is rebated to DATUM miners in the window. " +
+    " rebates to DATUM; " +
     leftover +
-    " is pool leftover."
+    " leftover."
   );
 }
 
@@ -1197,10 +1248,19 @@ function datumPoolUnavailableHtml() {
   );
 }
 
+function datumPoolMinDifficulty(pool) {
+  const status = datumPoolObject(pool && pool.status) || {};
+  const raw = status.min_difficulty != null ? status.min_difficulty : pool && pool.min_difficulty;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 function datumPoolConnectCardsHtml(pool, info) {
   const endpoint = datumPoolEndpoint(pool);
   const pubkey = String(info.pool_pubkey || "").trim();
   const stratum = datumPoolStratumConnect(pool);
+  const minDiff = datumPoolMinDifficulty(pool);
+  const minDiffHtml = minDiff != null ? datumPoolCopyControl("Min difficulty", String(minDiff), "hint") : "";
   const datumCard =
     '<article class="datum-pool-card">' +
     '<h3 class="datum-pool-card__title">DATUM</h3>' +
@@ -1209,6 +1269,7 @@ function datumPoolConnectCardsHtml(pool, info) {
     "</p>" +
     datumPoolCopyControl("DATUM", endpoint) +
     datumPoolCopyControl("Pool pubkey", pubkey, "hex") +
+    minDiffHtml +
     "</article>";
   const stratumCard = stratum
     ? '<article class="datum-pool-card">' +
@@ -1217,36 +1278,185 @@ function datumPoolConnectCardsHtml(pool, info) {
       escapeHtml(datumPoolStratumFeeNote(info)) +
       "</p>" +
       datumPoolCopyControl("Stratum V1", stratum.url) +
-      datumPoolCopyControl("User", stratum.username) +
+      datumPoolCopyControl("User", stratum.username, "hint") +
       datumPoolCopyControl("Pass", stratum.password, "hint") +
-      datumPoolCopyControl("Algo", stratum.pow || "BLAKE2b") +
+      datumPoolCopyControl("Algo", stratum.pow || "BLAKE2b", "hint") +
+      minDiffHtml +
       "</article>"
     : "";
   return '<div class="datum-pool-connect-grid">' + datumCard + stratumCard + "</div>";
 }
 
-function datumPoolBoardHtml(pool) {
+const DATUM_POOL_EMPTY_NOTE =
+  "Empty (subsidy-only) finds freeze the share window and pay that snapshot after 100 confirmations. Fees from the find, not today's live fee: DATUM 0% then 0.21%; SV1 2.3% (2% DATUM rebate, 0.3% leftover); top 128; 546 sat floor.";
+const DATUM_POOL_EMPTY_PATH = "/api/empty";
+let lastEmptyFindsDoc = null;
+let lastEmptyFindsKey = "";
+
+function datumPoolEmptyCount(pool, key) {
+  const status = datumPoolObject(pool && pool.status) || {};
+  const n = Number(status[key] != null ? status[key] : pool && pool[key]);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function datumPoolEmptyLink(pool) {
+  const links = datumPoolObject(pool && pool.links) || {};
+  const raw = String(links.empty || DATUM_POOL_EMPTY_PATH).trim();
+  if (!raw || raw.indexOf("28917") !== -1 || raw === "/empty.json") return DATUM_POOL_EMPTY_PATH;
+  return raw;
+}
+
+function datumPoolEmptyPayoutMap(find) {
+  const map = {};
+  (find && Array.isArray(find.payouts) ? find.payouts : []).forEach(function (row) {
+    const id = datumPoolMinerId(row);
+    if (id) map[id] = row.sats;
+  });
+  return map;
+}
+
+function datumPoolEmptyFindMinersTableHtml(find) {
+  const miners = Array.isArray(find && find.miners) ? find.miners : [];
+  const payouts = datumPoolEmptyPayoutMap(find);
+  if (!miners.length) {
+    return '<p class="datum-pool-miner--empty">No identities in this frozen window.</p>';
+  }
+  return (
+    '<div class="datum-pool-table-wrap">' +
+    '<table class="datum-pool-table">' +
+    "<thead><tr>" +
+    '<th scope="col">Username</th>' +
+    '<th scope="col">Kind</th>' +
+    '<th scope="col">Window work</th>' +
+    '<th scope="col">DATUM work</th>' +
+    '<th scope="col">Stratum work</th>' +
+    '<th scope="col">Window %</th>' +
+    '<th scope="col">Payout</th>' +
+    "</tr></thead><tbody>" +
+    miners
+      .map(function (row) {
+        const id = datumPoolMinerId(row);
+        const sats = payouts[id];
+        return (
+          "<tr>" +
+          '<td class="datum-pool-table__user portal-kpi-value--mono" title="' +
+          escapeHtml(id) +
+          '">' +
+          escapeHtml(id) +
+          "</td>" +
+          '<td class="datum-pool-table__kind">' +
+          escapeHtml(datumPoolMinerKindLabel(row)) +
+          "</td>" +
+          '<td class="datum-pool-table__num">' +
+          escapeHtml(formatDatumWork(row.work)) +
+          "</td>" +
+          '<td class="datum-pool-table__num">' +
+          escapeHtml(formatDatumWork(row.datum_work)) +
+          "</td>" +
+          '<td class="datum-pool-table__num">' +
+          escapeHtml(formatDatumWork(row.public_work)) +
+          "</td>" +
+          '<td class="datum-pool-table__num">' +
+          escapeHtml(formatDatumPercent(row.window_percent)) +
+          "</td>" +
+          '<td class="datum-pool-table__num">' +
+          escapeHtml(sats == null ? "—" : formatNumber(Number(sats) || 0) + " sats") +
+          "</td>" +
+          "</tr>"
+        );
+      })
+      .join("") +
+    "</tbody></table></div>"
+  );
+}
+
+function datumPoolEmptyFact(label, valueHtml) {
+  return (
+    '<p class="datum-pool-empty__chip"><span>' +
+    escapeHtml(label) +
+    "</span> " +
+    valueHtml +
+    "</p>"
+  );
+}
+
+function datumPoolEmptyFindHtml(find) {
+  const height = find && find.height != null ? String(find.height) : "";
+  const block = String((find && find.block) || "").trim();
+  const found = formatMetricsAsOf(find && find.found_at);
+  const value = Number(find && find.value);
+  const leftover = Number(find && find.leftover_sats);
+  const mature = find && find.mature_after_height != null ? String(find.mature_after_height) : "";
+  const settled = !!(find && find.settled);
+  const hashHtml = block
+    ? '<a class="datum-pool-empty__block portal-kpi-value--mono" href="#viewer" title="' +
+      escapeHtml(block) +
+      '">' +
+      escapeHtml(shortenDatumHex(block)) +
+      "</a>"
+    : escapeHtml("—");
+  return (
+    '<article class="datum-pool-card datum-pool-empty__find">' +
+    '<h3 class="datum-pool-card__title">Height ' +
+    escapeHtml(height || "—") +
+    "</h3>" +
+    '<div class="datum-pool-empty__chips">' +
+    datumPoolEmptyFact("Height", escapeHtml(height || "—")) +
+    datumPoolEmptyFact("Block", hashHtml) +
+    datumPoolEmptyFact("Found", escapeHtml(found || "—")) +
+    datumPoolEmptyFact("Value", escapeHtml(Number.isFinite(value) ? formatNumber(value) + " sats" : "—")) +
+    datumPoolEmptyFact("Fee", escapeHtml(formatDatumBps(find && find.fee_bps, "0%"))) +
+    datumPoolEmptyFact("Status", escapeHtml(settled ? "Settled" : "Unsettled")) +
+    datumPoolEmptyFact("Mature after", escapeHtml(mature || "—")) +
+    "</div>" +
+    datumPoolEmptyFindMinersTableHtml(find) +
+    '<p class="muted-note datum-pool-empty__leftover">Leftover ' +
+    escapeHtml(Number.isFinite(leftover) ? formatNumber(leftover) + " sats" : "N/A") +
+    " stays on the pool script (fee, dust, or past the 128-output cap).</p>" +
+    "</article>"
+  );
+}
+
+function datumPoolEmptyBankHtml(pool, emptyDoc) {
+  const findsCount = datumPoolEmptyCount(pool, "empty_finds");
+  const finds = emptyDoc && Array.isArray(emptyDoc.finds) ? emptyDoc.finds : [];
+  let body = "";
+  if (findsCount <= 0 && !finds.length) return "";
+  if (findsCount > 0 && !emptyDoc) {
+    body = '<p class="muted-note datum-pool-empty__state">Loading empty finds…</p>';
+  } else if (finds.length) {
+    body = finds.map(datumPoolEmptyFindHtml).join("");
+  }
+  return (
+    '<div class="datum-pool-empty">' +
+    '<h3 class="datum-pool-miners__title">Empty finds</h3>' +
+    '<p class="datum-pool-miners__hint">' +
+    escapeHtml(DATUM_POOL_EMPTY_NOTE) +
+    "</p>" +
+    body +
+    "</div>"
+  );
+}
+
+function datumPoolBoardHtml(pool, emptyDoc) {
   if (!datumPoolUsable(pool)) return datumPoolUnavailableHtml();
+  if (emptyDoc == null) emptyDoc = lastEmptyFindsDoc;
   const info = datumPoolObject(pool.pool) || {};
-  const status = datumPoolObject(pool.status) || {};
-  const window = datumPoolObject(pool.window) || {};
   const name = String(info.name || "DATUM pool").trim() || "DATUM pool";
   const style = String(info.style || "").trim() ||
     "Non-custodial DATUM with an 8×-nethash rolling work window.";
   const maxSplit = Number(info.max_split_outputs);
   const minPayout = Number(info.min_payout_sats);
   const styleFacts = [];
-  if (Number.isFinite(maxSplit) && maxSplit > 0) styleFacts.push("Max " + formatNumber(maxSplit) + " split outputs");
-  if (Number.isFinite(minPayout) && minPayout > 0) styleFacts.push("Min payout " + formatNumber(minPayout) + " sats");
+  if (Number.isFinite(maxSplit) && maxSplit > 0) styleFacts.push("Max " + formatNumber(maxSplit) + " outputs");
+  if (Number.isFinite(minPayout) && minPayout > 0) styleFacts.push(formatNumber(minPayout) + " sat min payout");
   const source = datumPoolSourceUrl(pool);
-  const progress = datumPoolWindowPct(pool);
-  const progressWidth = Number.isFinite(progress) ? Math.max(0, Math.min(100, progress)) : 0;
   const miners = datumPoolMiners(pool);
   const meaning = String(pool.window_percent_meaning || "").trim();
   const minerHint = meaning ||
-    "Window % is the payout split. Hash % is the " +
+    "Window % = payout split. Hash % = " +
     datumPoolHashrateWindowLabel(pool).replace(" avg", "") +
-    " accepted-work share.";
+    " work share.";
   const sourceHtml = source
     ? '<a class="datum-pool-source" href="' +
       escapeHtml(source) +
@@ -1265,43 +1475,14 @@ function datumPoolBoardHtml(pool) {
     escapeHtml((function () {
       let lede = style.replace(/\s+$/, "");
       if (lede && !/[.!?]$/.test(lede)) lede += ".";
-      if (styleFacts.length) lede += (lede ? " " : "") + styleFacts.join(". ") + ".";
+      if (styleFacts.length) lede += (lede ? " " : "") + styleFacts.join(" · ") + ".";
       return lede;
     })()) +
     "</p></div></div>" +
+    datumPoolMetricsHtml(pool) +
     '<div class="datum-pool-connect">' +
     datumPoolConnectCardsHtml(pool, info) +
     "</div>" +
-    '<div class="datum-pool-stats">' +
-    portalKpiStrip(
-      [
-        portalKpiHtml("Hashrate", formatDatumHashrate(status.hashrate_hs), { highlight: true, unit: datumPoolHashrateWindowLabel(pool) }),
-        portalKpiHtml("DATUM clients", formatNumber(Number(status.connected_datum_clients) || 0), { unit: "sessions" }),
-        portalKpiHtml("Shares", formatNumber(Number(status.shares) || 0)),
-        portalKpiHtml("Blocks", formatNumber(Number(status.blocks_found) || 0), { unit: "found" }),
-      ],
-      "portal-kpi-strip--in-board"
-    ) +
-    '<div class="datum-pool-progress portal-retarget-bar pool-share-retarget">' +
-    '<div class="portal-retarget-head">' +
-    '<span class="portal-retarget-label">Window</span>' +
-    '<span class="portal-retarget-meta">' +
-    escapeHtml(formatDatumPercent(progress)) +
-    " of target work" +
-    (window.description ? " · " + escapeHtml(String(window.description)) : "") +
-    "</span></div>" +
-    '<div class="portal-retarget-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' +
-    escapeHtml(String(progressWidth)) +
-    '" aria-label="Pool work window fill">' +
-    '<div class="portal-retarget-fill" style="width:' +
-    progressWidth +
-    '%"></div></div>' +
-    '<p class="datum-pool-window-work">Work ' +
-    escapeHtml(formatDatumWork(window.current_work != null ? window.current_work : status.work)) +
-    " / " +
-    escapeHtml(formatDatumWork(window.target_work != null ? window.target_work : status.window)) +
-    "</p></div></div>" +
-    datumPoolNethashCardHtml(pool) +
     '<div class="datum-pool-miners">' +
     '<h3 class="datum-pool-miners__title">Payout identities</h3>' +
     '<p class="datum-pool-miners__hint">' +
@@ -1309,21 +1490,49 @@ function datumPoolBoardHtml(pool) {
     "</p>" +
     datumPoolMinersTableHtml(miners) +
     "</div>" +
+    datumPoolEmptyBankHtml(pool, emptyDoc) +
     '<div class="datum-pool-footer">' +
     '<p class="muted-note datum-pool-audit">' +
     '<a href="/api/pool">/api/pool</a>' +
     " · " +
     '<a href="/api/shares">/api/shares</a>' +
+    " · " +
+    '<a href="' +
+    escapeHtml(datumPoolEmptyLink(pool)) +
+    '">Empty finds</a>' +
     "</p>" +
     sourceHtml +
     "</div></section>"
   );
 }
 
-function syncDatumPoolBoard(pool) {
+function syncDatumPoolBoard(pool, emptyDoc) {
   const host = document.getElementById("datumPoolBoard");
   if (!host) return;
-  host.innerHTML = datumPoolBoardHtml(pool);
+  host.innerHTML = datumPoolBoardHtml(pool, emptyDoc);
+}
+
+async function loadEmptyFindsIfNeeded(pool) {
+  const finds = datumPoolEmptyCount(pool, "empty_finds");
+  const unsettled = datumPoolEmptyCount(pool, "empty_unsettled");
+  if (finds <= 0) {
+    const hadDoc = !!lastEmptyFindsDoc;
+    lastEmptyFindsDoc = null;
+    lastEmptyFindsKey = "";
+    return hadDoc;
+  }
+  const key = finds + ":" + unsettled;
+  if (lastEmptyFindsDoc && lastEmptyFindsKey === key) return false;
+  try {
+    const r = await blockvasePublicFetch("/empty");
+    const d = await r.json();
+    if (!d || typeof d !== "object") return false;
+    lastEmptyFindsDoc = d;
+    lastEmptyFindsKey = key;
+    return true;
+  } catch (_err) {
+    return false;
+  }
 }
 
 function initDatumPoolBoard() {
@@ -1368,7 +1577,10 @@ async function loadPrimePool() {
     const r = await blockvasePublicFetch("/pool");
     const d = await r.json();
     const pool = publicPoolDocument(d);
-    if (adoptDatumPool(pool)) syncDatumPoolBoard(lastDatumPool);
+    if (adoptDatumPool(pool)) {
+      syncDatumPoolBoard(lastDatumPool);
+      if (await loadEmptyFindsIfNeeded(lastDatumPool)) syncDatumPoolBoard(lastDatumPool);
+    }
   } catch (_err) {
     // Keep the last Prime cache. Do not wait for node-data ingest.
   }
