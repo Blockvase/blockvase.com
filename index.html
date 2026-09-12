@@ -24,7 +24,7 @@
     <meta name="twitter:image" content="https://blockvase.com/media/x-preview.png?v=6" />
     <meta name="twitter:image:alt" content="Blockvase" />
     <link rel="icon" href="/media/logo_64.png" type="image/png" />
-    <link rel="stylesheet" href="/static/style.css?v=256" />
+    <link rel="stylesheet" href="/static/style.css?v=260" />
     <script>
       try {
         var bw = "glow";
@@ -71,7 +71,7 @@
             <div class="block-carousel__track" id="blockCarouselTrack" role="list"></div>
             <div id="blockCarouselShare" class="block-carousel-share"></div>
           </section>
-          <div class="display-preview metric-board metric-board--dense" aria-label="Live mempool">
+          <div class="display-preview metric-board metric-board--dense" id="viewerMempoolPreview" aria-label="Live mempool" hidden>
             <form id="mempoolTxSearch" class="mempool-tx-search display-preview-search" role="search">
               <label class="mempool-tx-search__label" for="mempoolTxSearchInput">Search block viewer</label>
               <div class="mempool-tx-search__field">
@@ -670,6 +670,6 @@
     </script>
     <script src="/static/blockvase-api.js?v=91"></script>
     <script src="/static/qrcode.js?v=88"></script>
-    <script src="/static/index.js?v=303"></script>
+    <script src="/static/index.js?v=307"></script>
   </body>
 </html>

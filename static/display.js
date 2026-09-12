@@ -566,7 +566,7 @@ function applySyncMetricsToDom() {
   );
   setMetricHtml(
     "sync-metric-peers",
-    syncCellHtml("Peers", c.peers != null ? c.peers : SYNC_SPINNER)
+    syncCellHtml("Server node peers", c.peers != null ? c.peers : SYNC_SPINNER)
   );
 }
 

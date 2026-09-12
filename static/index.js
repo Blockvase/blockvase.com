@@ -169,15 +169,265 @@ function metricBoard(title, body, extraClass, titleNote) {
   return "<section class=\"" + cls + "\"" + label + ">" + head + body + "</section>";
 }
 
+const METRIC_HISTORY_KEEP = 240;
+const metricHistory = {
+  viewer: [],
+  pool: [],
+  loaded: false,
+  loading: null,
+};
+
+function metricSparkSvg(chart, series) {
+  const extra = series && series.length ? " data-metric-series=\"" + metricEscape(series.join(",")) + "\"" : "";
+  return (
+    '<div class="metric-spark-block">' +
+    '<svg class="metric-spark' +
+    (series && series.length > 1 ? " metric-spark--multi" : "") +
+    '" data-metric-chart="' +
+    metricEscape(chart) +
+    '"' +
+    extra +
+    ' viewBox="0 0 120 36" preserveAspectRatio="none" aria-hidden="true"></svg>' +
+    '<p class="metric-spark-range" hidden></p>' +
+    "</div>"
+  );
+}
+
+function mergeMetricPoint(kind, point) {
+  if (!point || typeof point !== "object") return;
+  const t = Number(point.t);
+  if (!Number.isFinite(t) || t <= 0) return;
+  const list = metricHistory[kind];
+  if (!Array.isArray(list)) return;
+  const next = Object.assign({}, point, { t: Math.floor(t) });
+  const last = list.length ? list[list.length - 1] : null;
+  if (last && last.t === next.t) {
+    list[list.length - 1] = Object.assign({}, last, next);
+  } else if (!last || last.t < next.t) {
+    list.push(next);
+  } else {
+    let i = list.length - 1;
+    while (i >= 0 && list[i].t > next.t) i -= 1;
+    if (i >= 0 && list[i].t === next.t) list[i] = Object.assign({}, list[i], next);
+    else list.splice(i + 1, 0, next);
+  }
+  if (list.length > METRIC_HISTORY_KEEP) list.splice(0, list.length - METRIC_HISTORY_KEEP);
+}
+
+function metricSeriesValues(kind, key) {
+  const list = metricHistory[kind] || [];
+  const out = [];
+  for (let i = 0; i < list.length; i += 1) {
+    const n = Number(list[i][key]);
+    if (Number.isFinite(n)) out.push(n);
+  }
+  return out;
+}
+
+function metricSeriesBounds(kind, keys) {
+  const list = metricHistory[kind] || [];
+  let first = null;
+  let last = null;
+  for (let i = 0; i < list.length; i += 1) {
+    const point = list[i];
+    const t = Number(point.t);
+    if (!Number.isFinite(t) || t <= 0) continue;
+    let hit = false;
+    for (let k = 0; k < keys.length; k += 1) {
+      if (Number.isFinite(Number(point[keys[k]]))) {
+        hit = true;
+        break;
+      }
+    }
+    if (!hit) continue;
+    if (first == null) first = t;
+    last = t;
+  }
+  return { first: first, last: last };
+}
+
+function formatMetricRange(first, last) {
+  if (first == null) return "";
+  const startAt = new Date(first * 1000);
+  const endAt = new Date((last == null ? first : last) * 1000);
+  if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) return "";
+  const timeOpts = { hour: "numeric", minute: "2-digit" };
+  const start = startAt.toLocaleTimeString(undefined, timeOpts);
+  const end = endAt.toLocaleTimeString(undefined, timeOpts);
+  if (last == null || Math.abs(last - first) < 60) return start;
+  const sameDay =
+    startAt.getFullYear() === endAt.getFullYear() &&
+    startAt.getMonth() === endAt.getMonth() &&
+    startAt.getDate() === endAt.getDate();
+  if (sameDay) return start + " – " + end;
+  return (
+    startAt.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) +
+    " – " +
+    end
+  );
+}
+
+function metricSparkPath(values, width, height, padY) {
+  const w = width || 120;
+  const h = height || 36;
+  const pad = padY == null ? 4 : padY;
+  if (!values.length) return { line: "", fill: "" };
+  const min = Math.min.apply(null, values);
+  const max = Math.max.apply(null, values);
+  const span = max - min;
+  const inner = Math.max(1, h - pad * 2);
+  if (span <= 0) {
+    const y = (h * 0.58).toFixed(2);
+    return { line: "M0," + y + " L" + w + "," + y, fill: "" };
+  }
+  function yAt(v) {
+    return pad + (1 - (v - min) / span) * inner;
+  }
+  const step = values.length === 1 ? 0 : w / (values.length - 1);
+  const pts = values.map(function (v, i) {
+    const x = values.length === 1 ? w / 2 : i * step;
+    return x.toFixed(2) + "," + yAt(v).toFixed(2);
+  });
+  const line = "M" + pts.join(" L");
+  const fill =
+    "M0," +
+    h +
+    " L" +
+    pts.join(" L") +
+    " L" +
+    w +
+    "," +
+    h +
+    " Z";
+  return { line: line, fill: fill };
+}
+
+function paintMetricChart(svg) {
+  if (!svg || !svg.getAttribute) return;
+  const spec = String(svg.getAttribute("data-metric-chart") || "");
+  const parts = spec.split(".");
+  const kind = parts[0];
+  const key = parts.slice(1).join(".");
+  const seriesAttr = String(svg.getAttribute("data-metric-series") || "");
+  const keys = seriesAttr
+    ? seriesAttr.split(",").map(function (s) { return s.trim(); }).filter(Boolean)
+    : key ? [key] : [];
+  const rangeEl = svg.parentElement && svg.parentElement.querySelector
+    ? svg.parentElement.querySelector(".metric-spark-range")
+    : null;
+  if (!kind || !keys.length) {
+    svg.innerHTML = "";
+    if (rangeEl) {
+      rangeEl.hidden = true;
+      rangeEl.textContent = "";
+    }
+    return;
+  }
+  const paths = keys.map(function (seriesKey, index) {
+    const values = metricSeriesValues(kind, seriesKey);
+    const d = metricSparkPath(values, 120, 36, 4);
+    if (!d.line) return "";
+    const tone = index === 0 ? "high" : index === 1 ? "med" : "low";
+    const fill =
+      index === 0
+        ? '<path class="metric-spark-fill" d="' + d.fill + '"></path>'
+        : "";
+    return (
+      fill +
+      '<path class="metric-spark-line metric-spark-line--' +
+      tone +
+      '" d="' +
+      d.line +
+      '"></path>'
+    );
+  }).join("");
+  svg.innerHTML = paths;
+  const bounds = metricSeriesBounds(kind, keys);
+  const range = formatMetricRange(bounds.first, bounds.last);
+  if (rangeEl) {
+    rangeEl.textContent = range;
+    rangeEl.hidden = !range;
+  }
+}
+
+function paintMetricCharts(root) {
+  const host = root && root.querySelectorAll ? root : document;
+  host.querySelectorAll("[data-metric-chart]").forEach(paintMetricChart);
+}
+
+async function ensureMetricHistory() {
+  if (metricHistory.loaded) return;
+  if (metricHistory.loading) return metricHistory.loading;
+  metricHistory.loading = (async function () {
+    try {
+      const r = await blockvaseFetchWithTimeout("/metrics-history", 8000);
+      const d = await r.json();
+      (d.viewer || []).forEach(function (point) {
+        mergeMetricPoint("viewer", point);
+      });
+      (d.pool || []).forEach(function (point) {
+        mergeMetricPoint("pool", point);
+      });
+    } catch (_err) {
+    } finally {
+      metricHistory.loaded = true;
+    }
+  })();
+  return metricHistory.loading;
+}
+
+function viewerMetricPoint(d, mining) {
+  const t = Date.parse(d && (d.updated_at || d.as_of || d.updatedAt) || "") / 1000;
+  return {
+    t: Number.isFinite(t) ? t : Math.floor(Date.now() / 1000),
+    height: Number((mining && mining.miningHeight) || (d && d.blocks) || 0) || 0,
+    difficulty: Number((mining && mining.difficulty) || (d && d.difficulty) || 0) || 0,
+    networkhashps: Number((mining && mining.networkhashps) || (d && d.networkhashps) || 0) || 0,
+    chain_bytes: Number((d && d.size_on_disk) || 0) || 0,
+    mempool_tx: Number((d && d.mempool_tx) || 0) || 0,
+    mempool_bytes: Number((d && (d.mempool_size || d.mempool_bytes)) || 0) || 0,
+    connections: Number((d && d.connections) || 0) || 0,
+    fee_low: Number.isFinite(Number(d && d.fee_low)) ? Number(d.fee_low) : null,
+    fee_medium: Number.isFinite(Number(d && d.fee_medium)) ? Number(d.fee_medium) : null,
+    fee_high: Number.isFinite(Number(d && d.fee_high)) ? Number(d.fee_high) : null,
+  };
+}
+
+function poolMetricPoint(pool) {
+  const status = datumPoolObject(pool && pool.status) || {};
+  const view = datumPoolNethashView(pool) || {};
+  const t = Number(pool && pool.updated_at);
+  return {
+    t: Number.isFinite(t) && t > 1e9 ? t : Math.floor(Date.now() / 1000),
+    hashrate_hs: datumPoolFiniteNumber(status.hashrate_hs),
+    datum_clients: datumPoolFiniteNumber(status.connected_datum_clients),
+    sv1_clients: datumPoolFiniteNumber(status.connected_sv1_clients),
+    shares: datumPoolFiniteNumber(status.shares),
+    share_pct: view.poolPercent,
+    datum_pct: view.datumPercent,
+    sv1_pct: view.sv1Percent,
+    window_pct: datumPoolWindowPct(pool),
+  };
+}
+
 function metricKvHtml(rows) {
   return (
     '<dl class="metric-kv-compact">' +
     (rows || [])
       .map(function (row) {
         const v = row[1];
+        const opts = row[2] && typeof row[2] === "object" ? row[2] : {};
         const vHtml =
           typeof v === "string" && v.indexOf("<") >= 0 ? v : metricEscape(String(v ?? "N/A"));
-        return "<dt>" + metricEscape(row[0]) + "</dt><dd>" + vHtml + "</dd>";
+        const chart = opts.chart ? metricSparkSvg(opts.chart, opts.series) : "";
+        return (
+          "<dt>" +
+          metricEscape(row[0]) +
+          "</dt><dd>" +
+          vHtml +
+          "</dd>" +
+          (chart ? '<div class="metric-kv-chart">' + chart + "</div>" : "")
+        );
       })
       .join("") +
     "</dl>"
@@ -195,6 +445,7 @@ function portalKpiHtml(label, value, opts) {
   const unitHtml = opts.unit
     ? '<span class="portal-kpi-unit">' + metricEscape(opts.unit) + "</span>"
     : "";
+  const chart = opts.chart ? metricSparkSvg(opts.chart, opts.series) : "";
   return (
     '<div class="portal-kpi" role="group" aria-label="' +
     metricEscape(label) +
@@ -205,7 +456,9 @@ function portalKpiHtml(label, value, opts) {
     '">' +
     valueHtml +
     unitHtml +
-    "</span></div>"
+    "</span>" +
+    chart +
+    "</div>"
   );
 }
 
@@ -240,7 +493,8 @@ function feeStripHtml(low, med, high) {
         );
       })
       .join("") +
-    "</div>"
+    "</div>" +
+    metricSparkSvg("viewer.fees", ["fee_high", "fee_medium", "fee_low"])
   );
 }
 
@@ -972,17 +1226,6 @@ function datumPoolMetricsHtml(pool) {
     "Pool",
     metricKvHtml([
       [
-        "Hashrate",
-        datumPoolFactValue(
-          formatDatumHashrate(status.hashrate_hs),
-          datumPoolHashrateWindowLabel(pool),
-          true
-        ),
-      ],
-      ["DATUM clients", formatNumber(Number(status.connected_datum_clients) || 0)],
-      ["SV1 clients", formatNumber(Number(status.connected_sv1_clients) || 0)],
-      ["Shares", formatNumber(Number(status.shares) || 0)],
-      [
         "Blocks",
         datumPoolFactValue(
           formatNumber(Number(status.blocks_found) || 0) +
@@ -993,6 +1236,26 @@ function datumPoolMetricsHtml(pool) {
           "found / empty / unsettled"
         ),
       ],
+      [
+        "Hashrate",
+        datumPoolFactValue(
+          formatDatumHashrate(status.hashrate_hs),
+          datumPoolHashrateWindowLabel(pool),
+          true
+        ),
+        { chart: "pool.hashrate_hs" },
+      ],
+      [
+        "DATUM clients",
+        formatNumber(Number(status.connected_datum_clients) || 0),
+        { chart: "pool.datum_clients" },
+      ],
+      [
+        "SV1 clients",
+        formatNumber(Number(status.connected_sv1_clients) || 0),
+        { chart: "pool.sv1_clients" },
+      ],
+      ["Shares", formatNumber(Number(status.shares) || 0), { chart: "pool.shares" }],
     ])
   );
   let shareCluster = "";
@@ -1004,30 +1267,33 @@ function datumPoolMetricsHtml(pool) {
       "Network share (last " + String(view.blocks) + " blocks)",
       metricKvHtml([
         [
+          "Cap",
+          formatDatumPercent(view.capPercent, Number.isInteger(view.capPercent) ? 0 : 1),
+        ],
+        ["Pool / network", rates.length ? rates.join(" / ") : "N/A"],
+        [
           "Share",
           datumPoolFactValue(
             view.showPercents ? formatNethashSharePercent(view.poolPercent) : "N/A",
             "",
             true
           ),
-        ],
-        [
-          "Cap",
-          formatDatumPercent(view.capPercent, Number.isInteger(view.capPercent) ? 0 : 1),
+          { chart: "pool.share_pct" },
         ],
         [
           "DATUM",
           view.showPercents && view.datumPercent != null
             ? formatNethashSharePercent(view.datumPercent)
             : "N/A",
+          { chart: "pool.datum_pct" },
         ],
         [
           "Stratum",
           view.showPercents && view.sv1Percent != null
             ? formatNethashSharePercent(view.sv1Percent)
             : "N/A",
+          { chart: "pool.sv1_pct" },
         ],
-        ["Pool / network", rates.length ? rates.join(" / ") : "N/A"],
       ])
     );
   }
@@ -1509,7 +1775,9 @@ function datumPoolBoardHtml(pool, emptyDoc) {
 function syncDatumPoolBoard(pool, emptyDoc) {
   const host = document.getElementById("datumPoolBoard");
   if (!host) return;
+  if (datumPoolUsable(pool)) mergeMetricPoint("pool", poolMetricPoint(pool));
   host.innerHTML = datumPoolBoardHtml(pool, emptyDoc);
+  paintMetricCharts(host);
 }
 
 async function loadEmptyFindsIfNeeded(pool) {
@@ -2509,12 +2777,20 @@ function initBlockCarousel() {
   }, true);
 }
 
+function setViewerSearchReady(ready) {
+  const preview = document.getElementById("viewerMempoolPreview");
+  if (!preview) return;
+  preview.hidden = !ready;
+}
+
 async function loadMetrics() {
   const beforeEl = document.getElementById("metricsBeforeMempool");
   const upperDetailEl = document.getElementById("metricsUpperDetail");
+  const historyReady = ensureMetricHistory();
   try {
     const r = await blockvaseFetch("/blockchain-info");
     const d = await r.json();
+    await historyReady;
 
     const status = document.getElementById("status");
     if (!d.connected) {
@@ -2527,6 +2803,7 @@ async function loadMetrics() {
       syncRetargetBar("");
       if (beforeEl) beforeEl.innerHTML = "";
       if (upperDetailEl) upperDetailEl.innerHTML = "";
+      setViewerSearchReady(false);
       return;
     }
 
@@ -2549,17 +2826,35 @@ async function loadMetrics() {
     updateBlockCarouselAsOf(asOfNote);
     lastPoolShare = d.pool_share && typeof d.pool_share === "object" ? d.pool_share : null;
     adoptDatumPool(d.datum_pool && typeof d.datum_pool === "object" ? d.datum_pool : null);
+    mergeMetricPoint("viewer", viewerMetricPoint(d, mining));
     syncDatumPoolBoard(lastDatumPool);
     const gridHtml = metricBoard(
       "Chain overview",
       portalKpiStrip(
         [
-          portalKpiHtml("Height", formatNumber(mining.miningHeight || d.blocks || 0), { highlight: true }),
-          portalKpiHtml("Difficulty", diffParts.value, { unit: diffParts.unit }),
-          portalKpiHtml("Network hash", hashParts.value, { unit: hashParts.unit, accent: true }),
-          portalKpiHtml("Chain size", chainParts.value, { unit: chainParts.unit }),
-          portalKpiHtml("Mempool tx", formatNumber(d.mempool_tx || 0)),
-          portalKpiHtml("Server node peers", formatNumber(d.connections || 0)),
+          portalKpiHtml("Height", formatNumber(mining.miningHeight || d.blocks || 0), {
+            highlight: true,
+            chart: "viewer.height",
+          }),
+          portalKpiHtml("Difficulty", diffParts.value, {
+            unit: diffParts.unit,
+            chart: "viewer.difficulty",
+          }),
+          portalKpiHtml("Network hash", hashParts.value, {
+            unit: hashParts.unit,
+            accent: true,
+            chart: "viewer.networkhashps",
+          }),
+          portalKpiHtml("Chain size", chainParts.value, {
+            unit: chainParts.unit,
+            chart: "viewer.chain_bytes",
+          }),
+          portalKpiHtml("Mempool tx", formatNumber(d.mempool_tx || 0), {
+            chart: "viewer.mempool_tx",
+          }),
+          portalKpiHtml("Server node peers", formatNumber(d.connections || 0), {
+            chart: "viewer.connections",
+          }),
         ],
         "portal-kpi-strip--in-board"
       ),
@@ -2588,7 +2883,7 @@ async function loadMetrics() {
         metricClusterHtml(
           "Mempool",
           metricKvHtml([
-            ["Size", escapeHtml(mempoolSize)],
+            ["Size", escapeHtml(mempoolSize), { chart: "viewer.mempool_bytes" }],
             [
               "Min fee",
               (d.mempool_minfee || 0).toFixed(8) + ' <span class="portal-kv-unit">BTC/kB</span>',
@@ -2612,9 +2907,12 @@ async function loadMetrics() {
 
     document.getElementById("metricsGrid").innerHTML = gridHtml;
     if (beforeEl) beforeEl.innerHTML = "";
+    setViewerSearchReady(true);
     syncPoolShareBoard(lastPoolShare);
     syncRetargetBar(retargetHtml);
     if (upperDetailEl) upperDetailEl.innerHTML = upperDetailHtml;
+    paintMetricCharts(document.getElementById("metricsGrid"));
+    paintMetricCharts(upperDetailEl);
 
     if (d.blocks > lastBlockHeight && lastBlockHeight > 0) {
       setTimeout(() => {
@@ -2636,6 +2934,7 @@ async function loadMetrics() {
     if (gridEl) gridEl.innerHTML = '<div class="error-msg">Error loading metrics: ' + escapeHtml(e.message || "Unknown error") + ". Reload the page to try again.</div>";
     if (beforeEl) beforeEl.innerHTML = "";
     if (upperEl) upperEl.innerHTML = "";
+    setViewerSearchReady(false);
   }
 }
 

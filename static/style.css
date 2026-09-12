@@ -1787,7 +1787,7 @@ body.portal-page .datum-pool-footer {
 }
 
 body.portal-page .datum-pool-metrics {
-  gap: var(--portal-space-3);
+  gap: var(--portal-space-5);
 }
 
 body.portal-page .datum-pool-metrics .datum-pool-progress {
@@ -1800,7 +1800,7 @@ body.portal-page .datum-pool-masthead {
 
 body.portal-page .datum-pool-metrics__grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--portal-space-4);
+  gap: var(--portal-space-5) var(--portal-space-5);
 }
 
 body.portal-page .datum-pool-metrics .metric-cluster-title {
@@ -1811,8 +1811,22 @@ body.portal-page .datum-pool-metrics .metric-cluster-title {
 
 body.portal-page .datum-pool-metrics .metric-kv-compact {
   margin: 0;
-  gap: 6px 16px;
+  row-gap: 4px;
+  column-gap: 20px;
   font-size: var(--portal-text-emphasis);
+}
+
+body.portal-page .datum-pool-metrics .metric-kv-compact dt,
+body.portal-page .datum-pool-metrics .metric-kv-compact dd {
+  padding-top: 10px;
+}
+
+body.portal-page .datum-pool-metrics .metric-kv-chart {
+  margin: 8px 0 10px;
+}
+
+body.portal-page .datum-pool-metrics .metric-kv-chart .metric-spark {
+  height: 40px;
 }
 
 body.portal-page .datum-pool-intro {
@@ -1821,7 +1835,7 @@ body.portal-page .datum-pool-intro {
 
 body.portal-page .datum-pool-lede {
   margin: 0;
-  max-width: 46rem;
+  max-width: 72rem;
   color: var(--text);
   font-size: var(--portal-text-emphasis);
   line-height: 1.55;
@@ -3889,7 +3903,7 @@ body.portal-page .block-carousel-share {
 
 body.portal-page .block-carousel-retarget {
   width: 100%;
-  margin: 0 0 var(--portal-space-2);
+  margin: var(--portal-space-4) 0 var(--portal-space-2);
   min-width: 0;
 }
 
@@ -5059,6 +5073,10 @@ body.portal-page #metrics > .display-preview {
   display: flex;
   flex-direction: column;
   gap: 0;
+}
+
+body.portal-page #metrics > .display-preview[hidden] {
+  display: none;
 }
 
 body.portal-page #metricsGrid {
@@ -8220,6 +8238,74 @@ body.portal-page[data-bw] .pool-share-stack.is-hovering .pool-share-stack__seg.i
   height: 1px;
   margin: var(--portal-space-2) 0;
   background: color-mix(in srgb, var(--border) 40%, transparent);
+}
+
+body.portal-page .metric-spark-block {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+  margin-top: 6px;
+}
+
+body.portal-page .metric-spark {
+  display: block;
+  width: 100%;
+  height: 36px;
+  margin: 0;
+  background: none;
+  overflow: visible;
+}
+
+body.portal-page .metric-spark-range {
+  margin: 0;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+body.portal-page .metric-spark-fill {
+  fill: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+body.portal-page .metric-spark-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+body.portal-page .metric-spark-line--med {
+  stroke: color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+body.portal-page .metric-spark-line--low {
+  stroke: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+body.portal-page .metric-kv-compact dd {
+  min-width: 0;
+}
+
+body.portal-page .metric-kv-chart {
+  grid-column: 1 / -1;
+  justify-self: stretch;
+}
+
+body.portal-page .metric-kv-chart,
+body.portal-page .metric-cluster .metric-spark-block {
+  margin-top: 8px;
+}
+
+body.portal-page .metric-kv-chart .metric-spark,
+body.portal-page .metric-cluster .metric-spark {
+  height: 28px;
 }
 
 .metric-fee-strip {
