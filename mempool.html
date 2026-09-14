@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en" style="background-color: #0a0604;">
+<html lang="en" style="background-color: #110f0d;">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
     <meta name="color-scheme" content="dark" />
-    <meta name="theme-color" content="#0a0604" />
+    <meta name="theme-color" content="#110f0d" />
     <title>Blockvase Mempool</title>
     <meta name="description" content="Live Bitcoin mempool on the BLAKE2b chain." />
     <link rel="canonical" href="https://blockvase.com/mempool" />
@@ -13,8 +13,8 @@
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Blockvase" />
     <meta property="og:url" content="https://blockvase.com/mempool" />
-    <meta property="og:image" content="https://blockvase.com/media/x-preview.png?v=6" />
-    <meta property="og:image:secure_url" content="https://blockvase.com/media/x-preview.png?v=6" />
+    <meta property="og:image" content="https://blockvase.com/media/x-preview.png?v=8" />
+    <meta property="og:image:secure_url" content="https://blockvase.com/media/x-preview.png?v=8" />
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="628" />
@@ -22,18 +22,18 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Blockvase Mempool" />
     <meta name="twitter:description" content="Live Bitcoin mempool on the BLAKE2b chain." />
-    <meta name="twitter:image" content="https://blockvase.com/media/x-preview.png?v=6" />
+    <meta name="twitter:image" content="https://blockvase.com/media/x-preview.png?v=8" />
     <link rel="icon" href="/media/logo_64.png" type="image/png" />
     <style>
       html {
         margin: 0;
         min-height: 100%;
-        background-color: #0a0604;
+        background-color: #110f0d;
       }
       body {
         margin: 0;
         min-height: 100%;
-        background-color: #0a0604;
+        background-color: #110f0d;
       }
       body[data-theme="ocean"] {
         background-color: #051420;
@@ -45,7 +45,7 @@
       .display-shell,
       .panel.live-screen,
       #mempool-treemap {
-        background-color: #0a0604;
+        background-color: #110f0d;
       }
       body[data-theme="ocean"] main.display-shell,
       body[data-theme="ocean"] .display-shell,
@@ -53,61 +53,14 @@
       body[data-theme="ocean"] #mempool-treemap {
         background-color: #051420;
       }
-      html[data-bw="black"],
-      html[data-bw="black"] body,
-      body[data-bw="black"],
-      html[data-bw="black"] main.display-shell,
-      html[data-bw="black"] .display-shell,
-      html[data-bw="black"] .panel.live-screen,
-      html[data-bw="black"] #mempool-treemap,
-      body[data-bw="black"] main.display-shell,
-      body[data-bw="black"] .display-shell,
-      body[data-bw="black"] .panel.live-screen,
-      body[data-bw="black"] #mempool-treemap,
-      html[data-bw="glow"],
-      html[data-bw="glow"] body,
-      body[data-bw="glow"],
-      html[data-bw="glow"] main.display-shell,
-      html[data-bw="glow"] .display-shell,
-      html[data-bw="glow"] .panel.live-screen,
-      html[data-bw="glow"] #mempool-treemap,
-      body[data-bw="glow"] main.display-shell,
-      body[data-bw="glow"] .display-shell,
-      body[data-bw="glow"] .panel.live-screen,
-      body[data-bw="glow"] #mempool-treemap {
-        background-color: #000000;
-      }
-      html[data-bw="white"],
-      html[data-bw="white"] body,
-      body[data-bw="white"],
-      html[data-bw="white"] main.display-shell,
-      html[data-bw="white"] .display-shell,
-      html[data-bw="white"] .panel.live-screen,
-      html[data-bw="white"] #mempool-treemap,
-      body[data-bw="white"] main.display-shell,
-      body[data-bw="white"] .display-shell,
-      body[data-bw="white"] .panel.live-screen,
-      body[data-bw="white"] #mempool-treemap {
-        background-color: #ffffff;
-      }
       .hidden {
         display: none !important;
       }
     </style>
-    <script>
-      try {
-        var bw = "glow";
-        try {
-          var saved = localStorage.getItem("blockvase-bw");
-          if (saved === "black" || saved === "white" || saved === "glow") bw = saved;
-        } catch (e) {}
-        document.documentElement.setAttribute("data-bw", bw);
-      } catch (e) {}
-    </script>
-    <link rel="stylesheet" href="/static/style.css?v=241" media="print" onload="this.media='all'" />
-    <noscript><link rel="stylesheet" href="/static/style.css?v=241" /></noscript>
+    <link rel="stylesheet" href="/static/style.css?v=346" media="print" onload="this.media='all'" />
+    <noscript><link rel="stylesheet" href="/static/style.css?v=346" /></noscript>
   </head>
-  <body class="display-page mempool-interactive" data-theme="default" style="background-color: #0a0604;">
+  <body class="display-page mempool-interactive" data-theme="default" style="background-color: #110f0d;">
     <div class="portal-splash-overlay" id="portalSplashOverlay" aria-hidden="true"></div>
     <button type="button" class="mempool-fullscreen" id="mempoolFullscreen" aria-label="Fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
     <main class="container display-shell">
@@ -152,6 +105,6 @@
       })();
     </script>
     <script src="/static/blockvase-api.js?v=90"></script>
-    <script src="/static/display.js?v=105"></script>
+    <script src="/static/display.js?v=122"></script>
   </body>
 </html>

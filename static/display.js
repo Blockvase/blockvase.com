@@ -169,40 +169,55 @@ function currentBwMode() {
   return normalizeBwMode(raw);
 }
 
-function applyBwMode(mode) {
-  const bw = normalizeBwMode(mode);
-  const bg = bw === "white" ? "#ffffff" : bw === "black" || bw === "glow" ? "#000000" : "";
-  if (bw) {
-    document.documentElement.setAttribute("data-bw", bw);
-    document.documentElement.style.backgroundColor = bg;
-    if (document.body) {
-      document.body.setAttribute("data-bw", bw);
-      document.body.style.backgroundColor = bg;
-    }
-  } else {
-    document.documentElement.removeAttribute("data-bw");
-    document.documentElement.style.backgroundColor = "";
-    if (document.body) {
-      document.body.removeAttribute("data-bw");
-      document.body.style.backgroundColor = "";
-    }
+function applyBwMode() {
+  document.documentElement.removeAttribute("data-bw");
+  document.documentElement.classList.remove("soft-skin");
+  document.documentElement.style.backgroundColor = "#110f0d";
+  if (document.body) {
+    document.body.removeAttribute("data-bw");
+    document.body.classList.remove("soft-skin");
+    document.body.style.backgroundColor = "#110f0d";
   }
 }
 
+const BLOCK_COLORS_STUDIO = [
+  "#e4b07a", "#e09a52", "#c46a2e", "#b85a2e", "#d4894a",
+  "#8c4a28", "#a85224", "#c67a3a", "#d4a06a", "#9a5230",
+];
+
 function mempoolColorPalette() {
-  const bw = currentBwMode();
-  if (bw === "white") return BLOCK_COLORS_BW_WHITE;
-  if (bw === "black") return BLOCK_COLORS_BW_BLACK;
-  if (bw === "glow") return BLOCK_COLORS_BW_GLOW;
-  const theme = document.body.dataset.theme || "default";
-  return theme === "ocean" ? BLOCK_COLORS_OCEAN : BLOCK_COLORS_DEFAULT;
+  return BLOCK_COLORS_STUDIO;
 }
 
 function mempoolHighlightColor() {
-  const bw = currentBwMode();
-  if (bw === "white") return "#000000";
-  if (bw === "glow") return "#f7931a";
-  return "#ffffff";
+  return "#e4b07a";
+}
+
+function mixHex(a, b, t) {
+  const parse = function (hex) {
+    const n = String(hex || "").replace("#", "");
+    const full = n.length === 3 ? n[0] + n[0] + n[1] + n[1] + n[2] + n[2] : n;
+    return {
+      r: parseInt(full.slice(0, 2), 16) || 0,
+      g: parseInt(full.slice(2, 4), 16) || 0,
+      b: parseInt(full.slice(4, 6), 16) || 0,
+    };
+  };
+  const pa = parse(a);
+  const pb = parse(b);
+  const to = function (n) {
+    return ("0" + Math.max(0, Math.min(255, Math.round(n))).toString(16)).slice(-2);
+  };
+  return "#" + to(pa.r + (pb.r - pa.r) * t) + to(pa.g + (pb.g - pa.g) * t) + to(pa.b + (pb.b - pa.b) * t);
+}
+
+function mempoolTileFill(ctx, color, rect) {
+  const g = ctx.createLinearGradient(rect.x, rect.y + rect.height, rect.x + rect.width, rect.y);
+  g.addColorStop(0, mixHex(color, "#5c2a14", 0.12));
+  g.addColorStop(0.38, color);
+  g.addColorStop(0.72, mixHex(color, "#e4a86a", 0.14));
+  g.addColorStop(1, mixHex(color, "#e8b070", 0.22));
+  return g;
 }
 
 function recolorMempoolScene() {
@@ -1358,7 +1373,7 @@ class CanvasMempoolScene {
       if (state.animating) needsNext = true;
       const color = this.isHighlightedTxid(txid) ? mempoolHighlightColor() : state.color;
       ctx.globalAlpha = state.opacity;
-      ctx.fillStyle = color;
+      ctx.fillStyle = mempoolTileFill(ctx, color, state.rect);
       const bleed = state.rect.width > 1 && state.rect.height > 1 ? 0.75 : 0;
       ctx.fillRect(
         Math.max(0, state.rect.x - bleed),

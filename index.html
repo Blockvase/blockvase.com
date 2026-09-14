@@ -12,8 +12,8 @@
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Blockvase" />
     <meta property="og:url" content="https://blockvase.com/" />
-    <meta property="og:image" content="https://blockvase.com/media/x-preview.png?v=6" />
-    <meta property="og:image:secure_url" content="https://blockvase.com/media/x-preview.png?v=6" />
+    <meta property="og:image" content="https://blockvase.com/media/x-preview.png?v=8" />
+    <meta property="og:image:secure_url" content="https://blockvase.com/media/x-preview.png?v=8" />
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="628" />
@@ -21,20 +21,10 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Blockvase" />
     <meta name="twitter:description" content="A Bitcoin Knots node, DATUM pool, and live block viewer for Bitcoin with BLAKE2b." />
-    <meta name="twitter:image" content="https://blockvase.com/media/x-preview.png?v=6" />
+    <meta name="twitter:image" content="https://blockvase.com/media/x-preview.png?v=8" />
     <meta name="twitter:image:alt" content="Blockvase" />
     <link rel="icon" href="/media/logo_64.png" type="image/png" />
-    <link rel="stylesheet" href="/static/style.css?v=260" />
-    <script>
-      try {
-        var bw = "glow";
-        try {
-          var saved = localStorage.getItem("blockvase-bw");
-          if (saved === "black" || saved === "white" || saved === "glow") bw = saved;
-        } catch (e) {}
-        document.documentElement.setAttribute("data-bw", bw);
-      } catch (e) {}
-    </script>
+    <link rel="stylesheet" href="/static/style.css?v=346" />
     <script type="module" src="/static/vendor/model-viewer.min.js?v=2"></script>
   </head>
   <body class="portal-page" data-theme="default">
@@ -42,13 +32,12 @@
     <div class="container">
       <header>
         <div class="header-left">
-          <img class="logo" src="/media/logo_200.png" alt="Blockvase" />
-          <h1 id="deviceNameHeader"></h1>
+          <a class="portal-brand-link" id="portalHomeLink" href="#viewer" aria-label="Blockvase home">
+            <img class="logo" src="/media/logo_200.png" alt="" />
+            <h1 id="deviceNameHeader"></h1>
+          </a>
         </div>
         <div class="header-right">
-          <button type="button" class="bw-mode-toggle" id="bwModeToggle" aria-label="Switch to black mode" title="Switch to black mode">
-            <span class="bw-mode-toggle__fill" aria-hidden="true"></span>
-          </button>
           <button type="button" class="btn secondary portal-header-nav" id="blockvaseAccountButton">Sign in</button>
           <button type="button" class="btn secondary portal-header-nav" id="blockvaseAffiliatesButton" hidden>Affiliates</button>
           <button type="button" class="btn secondary portal-header-nav" id="blockvaseAdminButton" hidden>Admin</button>
@@ -58,6 +47,7 @@
       <nav class="portal-tab-nav" aria-label="Blockvase portal sections" role="tablist">
         <button type="button" class="portal-tab-button is-active" role="tab" data-portal-tab="viewer" aria-controls="blockViewerTab" aria-selected="true">Viewer</button>
         <button type="button" class="portal-tab-button" role="tab" data-portal-tab="pool" aria-controls="poolTab" aria-selected="false">Pool</button>
+        <button type="button" class="portal-tab-button" role="tab" data-portal-tab="lightning" aria-controls="lightningTab" aria-selected="false">Lightning</button>
         <button type="button" class="portal-tab-button" role="tab" data-portal-tab="shop" aria-controls="shopTab" aria-selected="false" disabled aria-disabled="true" title="Shop is temporarily unavailable">Shop</button>
         <button type="button" class="portal-tab-button" role="tab" data-portal-tab="resources" aria-controls="resourcesTab" aria-selected="false">Resources</button>
       </nav>
@@ -89,7 +79,7 @@
               <button type="button" class="btn-icon display-open-full" id="displayOpenFull" aria-label="Open mempool in new tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></button>
             </form>
             <div class="display-iframe-wrapper" id="displayIframeWrapper">
-              <iframe class="display-iframe" id="displayIframe" data-src="/mempool?embed=1&v=104" title="Live mempool treemap" loading="lazy"></iframe>
+              <iframe class="display-iframe" id="displayIframe" data-src="/mempool?embed=1&v=118" title="Live mempool treemap" loading="lazy"></iframe>
             </div>
             <div id="tx-detail-panel" class="tx-detail-panel" aria-hidden="true">
               <button type="button" class="btn-icon tx-detail-fullscreen" id="txDetailFullscreen" aria-label="Fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
@@ -124,7 +114,11 @@
       </section>
 
       <section id="poolTab" class="portal-tab-panel" data-portal-panel="pool" role="tabpanel" hidden>
-        <div id="datumPoolBoard" class="datum-pool"></div>
+        <div id="datumPoolBoard" class="datum-pool"><div class="loading pulse">Loading data...</div></div>
+      </section>
+
+      <section id="lightningTab" class="portal-tab-panel" data-portal-panel="lightning" role="tabpanel" hidden>
+        <div id="lightningBoard" class="datum-pool"><div class="loading pulse">Loading data...</div></div>
       </section>
 
       <section id="shopTab" class="portal-tab-panel" data-portal-panel="shop" role="tabpanel">
@@ -670,6 +664,6 @@
     </script>
     <script src="/static/blockvase-api.js?v=91"></script>
     <script src="/static/qrcode.js?v=88"></script>
-    <script src="/static/index.js?v=307"></script>
+    <script src="/static/index.js?v=365"></script>
   </body>
 </html>

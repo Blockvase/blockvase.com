@@ -173,6 +173,7 @@ const METRIC_HISTORY_KEEP = 240;
 const metricHistory = {
   viewer: [],
   pool: [],
+  lightning: [],
   loaded: false,
   loading: null,
 };
@@ -323,6 +324,8 @@ function paintMetricChart(svg) {
     }
     return;
   }
+  const gid = "sparkCopper-" + spec.replace(/[^a-z0-9]+/gi, "-");
+  const fid = gid + "-fill";
   const paths = keys.map(function (seriesKey, index) {
     const values = metricSeriesValues(kind, seriesKey);
     const d = metricSparkPath(values, 120, 36, 4);
@@ -330,7 +333,7 @@ function paintMetricChart(svg) {
     const tone = index === 0 ? "high" : index === 1 ? "med" : "low";
     const fill =
       index === 0
-        ? '<path class="metric-spark-fill" d="' + d.fill + '"></path>'
+        ? '<path class="metric-spark-fill" d="' + d.fill + '" fill="url(#' + fid + ')"></path>'
         : "";
     return (
       fill +
@@ -338,10 +341,25 @@ function paintMetricChart(svg) {
       tone +
       '" d="' +
       d.line +
-      '"></path>'
+      '" stroke="url(#' +
+      gid +
+      ')"></path>'
     );
   }).join("");
-  svg.innerHTML = paths;
+  svg.innerHTML =
+    '<defs>' +
+    '<linearGradient id="' + gid + '" x1="0" y1="1" x2="1" y2="0">' +
+    '<stop offset="0%" stop-color="#c46a2e"/>' +
+    '<stop offset="34%" stop-color="#d4894a"/>' +
+    '<stop offset="68%" stop-color="#e09a52"/>' +
+    '<stop offset="100%" stop-color="#e4a86a"/>' +
+    '</linearGradient>' +
+    '<linearGradient id="' + fid + '" x1="0" y1="0" x2="0" y2="1">' +
+    '<stop offset="0%" stop-color="#e09a52" stop-opacity="0.18"/>' +
+    '<stop offset="100%" stop-color="#e09a52" stop-opacity="0"/>' +
+    '</linearGradient>' +
+    '</defs>' +
+    paths;
   const bounds = metricSeriesBounds(kind, keys);
   const range = formatMetricRange(bounds.first, bounds.last);
   if (rangeEl) {
@@ -368,6 +386,9 @@ async function ensureMetricHistory() {
       (d.pool || []).forEach(function (point) {
         mergeMetricPoint("pool", point);
       });
+      (d.lightning || []).forEach(function (point) {
+        mergeMetricPoint("lightning", point);
+      });
     } catch (_err) {
     } finally {
       metricHistory.loaded = true;
@@ -390,6 +411,37 @@ function viewerMetricPoint(d, mining) {
     fee_low: Number.isFinite(Number(d && d.fee_low)) ? Number(d.fee_low) : null,
     fee_medium: Number.isFinite(Number(d && d.fee_medium)) ? Number(d.fee_medium) : null,
     fee_high: Number.isFinite(Number(d && d.fee_high)) ? Number(d.fee_high) : null,
+  };
+}
+
+function lightningFiniteNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function lightningMetricPoint(lightning) {
+  const status = lightningObject(lightning && lightning.status) || {};
+  const t = Number(lightning && lightning.updated_at);
+  const publicCount =
+    status.public_channels != null
+      ? Array.isArray(status.public_channels)
+        ? status.public_channels.length
+        : status.public_channels
+      : null;
+  const privateCount =
+    status.private_channels != null
+      ? Array.isArray(status.private_channels)
+        ? status.private_channels.length
+        : status.private_channels
+      : null;
+  return {
+    t: Number.isFinite(t) && t > 1e9 ? t : Math.floor(Date.now() / 1000),
+    num_peers: lightningFiniteNumber(status.num_peers),
+    num_active_channels: lightningFiniteNumber(status.num_active_channels),
+    num_pending_channels: lightningFiniteNumber(status.num_pending_channels),
+    capacity_btc: lightningFiniteNumber(status.capacity_btc),
+    public_channels: lightningFiniteNumber(publicCount),
+    private_channels: lightningFiniteNumber(privateCount),
   };
 }
 
@@ -570,16 +622,46 @@ function formatPoolSharePct(pct) {
   return n.toFixed(2) + "%";
 }
 
+const ALPHAPOOL_TEST_TAG_RE = /(?:^|[^A-Za-z0-9])Test\s+Test(?:[^A-Za-z0-9]|$)/i;
+const LAZARUS_POOL_RE = /^\/?lazarus[a-z0-9]*\/?$/i;
+
+function isAlphaPoolTestIdentity(pool, coinbase) {
+  const p = String(pool || "").trim();
+  const c = String(coinbase || "").trim();
+  if (p.toLowerCase() === "test") return true;
+  if (c.toLowerCase() === "test") return true;
+  return ALPHAPOOL_TEST_TAG_RE.test(c);
+}
+
+function isLazarusIdentity(name) {
+  return LAZARUS_POOL_RE.test(String(name || "").trim());
+}
+
+function aliasPoolShareKey(key) {
+  const text = String(key || "").trim();
+  if (isAlphaPoolTestIdentity(text, text)) return "AlphaPool";
+  if (isLazarusIdentity(text)) return "Lazarus";
+  return text;
+}
+
 function poolShareRows(share, view) {
   if (!share || typeof share !== "object") return [];
-  if (view === "tag") {
-    return (share.by_tag || []).map(function (row) {
-      return { key: String(row.tag ?? ""), blocks: row.blocks, pct: row.pct };
+  const raw = view === "tag"
+    ? (share.by_tag || []).map(function (row) {
+      return { key: aliasPoolShareKey(row.tag), blocks: row.blocks, pct: row.pct };
+    })
+    : (share.by_pool || []).map(function (row) {
+      return { key: aliasPoolShareKey(row.pool), blocks: row.blocks, pct: row.pct };
     });
-  }
-  return (share.by_pool || []).map(function (row) {
-    return { key: String(row.pool ?? ""), blocks: row.blocks, pct: row.pct };
+  const merged = {};
+  raw.forEach(function (row) {
+    const key = String(row.key || "");
+    if (!merged[key]) merged[key] = { key: key, blocks: 0, pct: 0 };
+    merged[key].blocks += Number(row.blocks) || 0;
+    merged[key].pct += Number(row.pct) || 0;
   });
+  return Object.keys(merged).map(function (key) { return merged[key]; })
+    .sort(function (a, b) { return (Number(b.blocks) || 0) - (Number(a.blocks) || 0); });
 }
 
 function poolShareKey(value) {
@@ -914,6 +996,7 @@ let lastBlockHeight = 0;
 let lastPoolShare = null;
 let lastRetargetHtml = "";
 let lastDatumPool = null;
+let datumPoolLoadSettled = false;
 let poolShareView = "pool";
 let poolShareOpen = false;
 const DATUM_POOL_NOTE =
@@ -1501,17 +1584,13 @@ function datumPoolCopyControl(label, value, kind) {
   );
 }
 
+function portalBoardStatusHtml(message) {
+  return '<div class="loading pulse">' + escapeHtml(message || "Loading data...") + "</div>";
+}
+
 function datumPoolUnavailableHtml() {
-  return (
-    '<section class="metric-board metric-board--dense datum-pool-board">' +
-    '<div class="datum-pool-masthead">' +
-    '<div class="metric-board-heading"><h2 class="metric-board-title">DATUM pool</h2></div>' +
-    '<div class="datum-pool-intro">' +
-    '<p class="datum-pool-lede">Pool status is unavailable.</p>' +
-    '<p class="muted-note datum-pool-note">' +
-    escapeHtml(DATUM_POOL_NOTE) +
-    "</p></div></div></section>"
-  );
+  if (!datumPoolLoadSettled) return portalBoardStatusHtml("Loading data...");
+  return portalBoardStatusHtml("Pool status is unavailable.");
 }
 
 function datumPoolMinDifficulty(pool) {
@@ -1827,6 +1906,321 @@ function initDatumPoolBoard() {
   });
 }
 
+let lastLightning = null;
+let lightningLoadSettled = false;
+
+function lightningObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+
+function lightningSchemaVersion(lightning) {
+  if (!lightningObject(lightning)) return null;
+  const raw = lightning.schema_version != null ? lightning.schema_version : lightning.schemaVersion;
+  const version = Number(raw);
+  if (!Number.isFinite(version) || version < 1) return null;
+  return version;
+}
+
+function lightningAvailable(lightning) {
+  if (!lightningObject(lightning)) return false;
+  if (lightning.available === false || lightning.available === "false" || lightning.available === 0) return false;
+  return true;
+}
+
+function lightningUsable(lightning) {
+  return lightningSchemaVersion(lightning) != null && lightningAvailable(lightning);
+}
+
+function adoptLightning(next) {
+  if (lightningUsable(next)) lastLightning = next;
+  else if (lightningSchemaVersion(next) != null && !lightningAvailable(next)) lastLightning = null;
+  return lastLightning;
+}
+
+function lightningCssColor(value) {
+  const raw = String(value || "").trim().replace(/^#/, "");
+  return /^[0-9a-fA-F]{3,8}$/.test(raw) ? "#" + raw : "";
+}
+
+function lightningSwatchHtml(color, extraClass) {
+  const css = lightningCssColor(color);
+  if (!css) return "";
+  return (
+    '<span class="lightning-swatch' +
+    (extraClass ? " " + extraClass : "") +
+    '" style="background:' +
+    escapeHtml(css) +
+    '" aria-hidden="true"></span>'
+  );
+}
+
+function formatLightningBtcAmount(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "";
+  let text = n.toFixed(8).replace(/\.?0+$/, "");
+  if (text === "-0") text = "0";
+  return text;
+}
+
+function formatLightningBtc(value) {
+  const text = formatLightningBtcAmount(value);
+  return text ? text + " BTC" : "—";
+}
+
+function lightningCapacitySat(channel) {
+  const sat = Number(channel && channel.capacity_sat);
+  if (Number.isFinite(sat)) return sat;
+  const msat = Number(channel && channel.capacity_msat);
+  if (Number.isFinite(msat)) return msat / 1000;
+  const btc = Number(channel && channel.capacity_btc);
+  if (Number.isFinite(btc)) return btc * 1e8;
+  return 0;
+}
+
+function lightningQrHtml(uri) {
+  const text = String(uri || "").trim();
+  if (!text || typeof qrcode !== "function") return "";
+  try {
+    const qr = qrcode(0, "M");
+    qr.addData(text, "Byte");
+    qr.make();
+    return (
+      '<div class="lightning-qr" aria-hidden="true">' +
+      qr.createSvgTag({ cellSize: 3, margin: 1, scalable: true }) +
+      "</div>"
+    );
+  } catch (_err) {
+    return "";
+  }
+}
+
+function lightningChannelIsPrivate(row) {
+  const value = row && row.private;
+  return value === true || value === 1 || value === "true";
+}
+
+function lightningChannels(lightning) {
+  const rows = Array.isArray(lightning && lightning.channels) ? lightning.channels : [];
+  return rows
+    .filter(function (row) {
+      return row && typeof row === "object" && !lightningChannelIsPrivate(row);
+    })
+    .slice()
+    .sort(function (a, b) {
+      return lightningCapacitySat(b) - lightningCapacitySat(a);
+    });
+}
+
+function lightningPeerLabel(channel) {
+  const alias = String((channel && channel.peer_alias) || "").trim();
+  if (alias) return alias;
+  return shortenDatumHex((channel && channel.peer_id) || "", 10, 8) || "—";
+}
+
+function lightningPageTitle(lightning) {
+  const node = lightningObject(lightning && lightning.node) || {};
+  const alias = String(node.alias || "Blockvase").trim() || "Blockvase";
+  if (/lightning/i.test(alias)) return alias;
+  return alias + " Lightning";
+}
+
+function lightningPlainNotice(text) {
+  return String(text || "")
+    .replace(/[^.!?]*SHA-?256d[^.!?]*[.!?]*/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function lightningUnavailableHtml() {
+  if (!lightningLoadSettled) return portalBoardStatusHtml("Loading data...");
+  return portalBoardStatusHtml("Lightning status is unavailable.");
+}
+
+function lightningMetricsHtml(lightning) {
+  const status = lightningObject(lightning && lightning.status) || {};
+  const publicCount = status.public_channels != null ? status.public_channels : lightningChannels(lightning).length;
+  const privateCount = status.private_channels != null ? status.private_channels : 0;
+  const capacityText = formatLightningBtcAmount(status.capacity_btc);
+  return (
+    '<div class="datum-pool-metrics">' +
+    '<div class="metric-cluster-grid datum-pool-metrics__grid">' +
+    metricClusterHtml(
+      "Node",
+      metricKvHtml([
+        ["Peers", formatNumber(Number(status.num_peers) || 0), { chart: "lightning.num_peers" }],
+        [
+          "Active channels",
+          formatNumber(Number(status.num_active_channels) || 0),
+          { chart: "lightning.num_active_channels" },
+        ],
+        ["Pending", formatNumber(Number(status.num_pending_channels) || 0), { chart: "lightning.num_pending_channels" }],
+      ])
+    ) +
+    metricClusterHtml(
+      "Channels",
+      metricKvHtml([
+        [
+          "Capacity",
+          capacityText
+            ? datumPoolFactValue(capacityText, "BTC", true)
+            : "—",
+          { chart: "lightning.capacity_btc" },
+        ],
+        ["Public", formatNumber(Number(publicCount) || 0), { chart: "lightning.public_channels" }],
+        ["Private", formatNumber(Number(privateCount) || 0), { chart: "lightning.private_channels" }],
+      ])
+    ) +
+    "</div></div>"
+  );
+}
+
+function lightningConnectCardsHtml(lightning) {
+  const links = lightningObject(lightning && lightning.links) || {};
+  const node = lightningObject(lightning && lightning.node) || {};
+  const status = lightningObject(lightning && lightning.status) || {};
+  const uri = String(links.uri || node.uri || "").trim();
+  const host = String(links.host || "").trim();
+  const port = links.port != null ? String(links.port) : (node.port != null ? String(node.port) : "");
+  const nodeId = String(node.id || "").trim();
+  const color = String(node.color || "").trim();
+  const connectCard =
+    '<article class="datum-pool-card">' +
+    '<h3 class="datum-pool-card__title">Connect</h3>' +
+    '<p class="datum-pool-card__note">Use a BLAKE2b-capable Lightning node.</p>' +
+    datumPoolCopyControl("URI", uri, "mono") +
+    (host ? datumPoolCopyControl("Host", host, "hint") : "") +
+    (port ? datumPoolCopyControl("Port", port, "hint") : "") +
+    lightningQrHtml(uri) +
+    "</article>";
+  const nodeCard =
+    '<article class="datum-pool-card">' +
+    '<h3 class="datum-pool-card__title">Node</h3>' +
+    datumPoolCopyControl("Alias", node.alias || "—", "hint") +
+    datumPoolCopyControl("Node ID", nodeId, "hex") +
+    datumPoolCopyControl("Version", node.version || "—", "hint") +
+    datumPoolCopyControl("Network", node.network || "—", "hint") +
+    datumPoolCopyControl("Color", color ? (color.charAt(0) === "#" ? color : "#" + color) : "—", "hint") +
+    datumPoolCopyControl("Block height", status.blockheight != null ? formatNumber(status.blockheight) : "—", "hint") +
+    "</article>";
+  return '<div class="datum-pool-connect-grid">' + connectCard + nodeCard + "</div>";
+}
+
+function lightningChannelsTableHtml(channels) {
+  if (!channels.length) {
+    return '<p class="datum-pool-miner--empty">No public channels yet</p>';
+  }
+  return (
+    '<div class="datum-pool-table-wrap">' +
+    '<table class="datum-pool-table">' +
+    "<thead><tr>" +
+    '<th scope="col">Peer</th>' +
+    '<th scope="col">Capacity</th>' +
+    '<th scope="col">State</th>' +
+    '<th scope="col">Opened by</th>' +
+    '<th scope="col">Channel ID</th>' +
+    "</tr></thead><tbody>" +
+    channels
+      .map(function (row) {
+        const alias = lightningPeerLabel(row);
+        const peerId = String(row.peer_id || "").trim();
+        const label = String(row.state_label || "").trim();
+        const rawState = String(row.state || "").trim();
+        const opener = String(row.opener || "").trim().toLowerCase();
+        const openedBy = opener === "local" ? "Blockvase" : opener === "remote" ? "Peer" : "—";
+        const scid = String(row.short_channel_id || "").trim();
+        const funding = String(row.funding_txid || "").trim();
+        const stateHtml =
+          escapeHtml(label || rawState || "—") +
+          (label && label.toLowerCase() !== "open" && rawState && rawState.toLowerCase() !== label.toLowerCase()
+            ? '<span class="lightning-sub">' + escapeHtml(rawState) + "</span>"
+            : "");
+        return (
+          "<tr>" +
+          '<td class="datum-pool-table__user" title="' +
+          escapeHtml(peerId || alias) +
+          '">' +
+          '<span class="lightning-peer">' +
+          escapeHtml(alias) +
+          "</span></td>" +
+          '<td class="datum-pool-table__num">' +
+          escapeHtml(formatLightningBtc(row.capacity_btc != null ? row.capacity_btc : lightningCapacitySat(row) / 1e8)) +
+          "</td>" +
+          '<td class="datum-pool-table__kind">' +
+          stateHtml +
+          "</td>" +
+          '<td class="datum-pool-table__kind">' +
+          escapeHtml(openedBy) +
+          "</td>" +
+          '<td class="datum-pool-table__user">' +
+          (scid ? datumPoolCopyControl("Channel ID", scid, "mono") : escapeHtml("—")) +
+          (funding ? datumPoolCopyControl("Funding", funding, "hex") : "") +
+          "</td></tr>"
+        );
+      })
+      .join("") +
+    "</tbody></table></div>"
+  );
+}
+
+function lightningBoardHtml(lightning) {
+  if (!lightningUsable(lightning)) return lightningUnavailableHtml();
+  const notice = lightningPlainNotice(lightning.notice);
+  return (
+    '<section class="metric-board metric-board--dense datum-pool-board">' +
+    '<div class="datum-pool-masthead">' +
+    '<div class="metric-board-heading">' +
+    '<h2 class="metric-board-title">' +
+    escapeHtml(lightningPageTitle(lightning)) +
+    "</h2></div>" +
+    '<div class="datum-pool-intro">' +
+    (notice
+      ? '<p class="muted-note datum-pool-note">' + escapeHtml(notice) + "</p>"
+      : "") +
+    "</div></div>" +
+    lightningMetricsHtml(lightning) +
+    '<div class="datum-pool-connect">' +
+    lightningConnectCardsHtml(lightning) +
+    "</div>" +
+    '<div class="datum-pool-miners">' +
+    '<h3 class="datum-pool-miners__title">Public channels</h3>' +
+    '<p class="datum-pool-miners__hint">Public channels only. Private channels are counted above, not listed.</p>' +
+    lightningChannelsTableHtml(lightningChannels(lightning)) +
+    "</div></section>"
+  );
+}
+
+function syncLightningBoard(lightning) {
+  const host = document.getElementById("lightningBoard");
+  if (!host) return;
+  if (lightningUsable(lightning)) mergeMetricPoint("lightning", lightningMetricPoint(lightning));
+  host.innerHTML = lightningBoardHtml(lightning);
+  paintMetricCharts(host);
+}
+
+function initLightningBoard() {
+  const host = document.getElementById("lightningBoard");
+  if (!host || host.dataset.bound === "1") return;
+  host.dataset.bound = "1";
+  if (!host.innerHTML.trim()) syncLightningBoard(null);
+  host.addEventListener("click", function (event) {
+    const btn = event.target.closest("[data-datum-copy]");
+    if (!btn || !host.contains(btn)) return;
+    const text = btn.getAttribute("data-datum-copy") || "";
+    if (!text) return;
+    copyTextToClipboard(text, btn).then(function (ok) {
+      if (!ok) return;
+      btn.classList.add("is-copied");
+      const value = btn.querySelector(".datum-pool-copy__value");
+      const prev = value ? value.textContent : "";
+      if (value) value.textContent = "Copied";
+      setTimeout(function () {
+        btn.classList.remove("is-copied");
+        if (value) value.textContent = prev;
+      }, 1200);
+    });
+  });
+}
+
 /** Match backend state poller / settings stats refresh */
 const METRICS_POLL_MS = 5000;
 const PRIME_POOL_POLL_MS = 20000;
@@ -1895,6 +2289,10 @@ const blockCarouselState = {
   renderCount: 0,
   olderLoading: false,
   olderDone: false,
+  userBrowsing: false,
+  programmaticScroll: false,
+  scrollIdleTimer: 0,
+  programmaticScrollTimer: 0,
 };
 
 function esploraScriptType(type) {
@@ -2087,7 +2485,7 @@ function formatCoinbaseTag(raw) {
 function normalizePoolName(pool) {
   const text = String(pool || "").trim();
   if (!text || /^(unknown|none|n\/a|null|unidentified|-)$/i.test(text)) return "";
-  return text;
+  return aliasPoolShareKey(text);
 }
 
 function blockLabelFromSource(b) {
@@ -2099,7 +2497,7 @@ function blockLabelFromSource(b) {
   if (!pool && extrasPool) {
     pool = typeof extrasPool === "object" ? (extrasPool.name || extrasPool.slug || "") : extrasPool;
   }
-  const coinbase = formatCoinbaseTag(
+  let coinbase = formatCoinbaseTag(
     b.coinbase_tag ||
     b.coinbaseTag ||
     b.coinbase_ascii ||
@@ -2112,6 +2510,12 @@ function blockLabelFromSource(b) {
     ""
   );
   pool = normalizePoolName(pool);
+  if (isAlphaPoolTestIdentity(pool, coinbase)) {
+    pool = "AlphaPool";
+    if (/^test$/i.test(coinbase)) coinbase = "AlphaPool";
+  } else if (isLazarusIdentity(pool)) {
+    pool = "Lazarus";
+  }
   if (pool && coinbase && pool.toLowerCase() === coinbase.replace(/^\/|\/$/g, "").toLowerCase()) {
     return { pool: pool, coinbase: coinbase };
   }
@@ -2208,9 +2612,14 @@ function blockCarouselCardHtml(item) {
     selected ? "is-selected" : "",
     loading ? "is-loading" : "",
   ].filter(Boolean).join(" ");
+  const pending = !item.mining && !item.timestamp && !item.txCount && !item.hash && (item._lookupContext || item._extra);
   const time = item.mining
     ? "mining " + formatDuration(item.secondsSinceTip)
-    : formatTimeAgo(item.timestamp);
+    : pending
+      ? "Loading…"
+      : item.timestamp
+        ? formatTimeAgo(item.timestamp)
+        : "";
   const badge = item.mining ? '<span class="block-carousel__badge">Mining</span>' : "";
   const searchTag = blockCarouselState.searchingNode && (item.mining || selected)
     ? blockCarouselTagHtml("search", "Searching node")
@@ -2239,8 +2648,10 @@ function blockCarouselCardHtml(item) {
       (extra ? "<span>" + extra + "</span>" : "") +
     "</span>" +
     '<span class="block-carousel__stats">' +
-      "<span>" + formatNumber(item.txCount || 0) + " tx</span>" +
-      "<span>" + escapeHtml(formatBytes(item.size || 0)) + "</span>" +
+      (pending
+        ? "<span>…</span>"
+        : "<span>" + formatNumber(item.txCount || 0) + " tx</span>" +
+          "<span>" + escapeHtml(formatBytes(item.size || 0)) + "</span>") +
     "</span>" +
     "</button>"
   );
@@ -2290,12 +2701,54 @@ function mergeExtraCarouselItems(nextItems) {
   return live.concat(rest);
 }
 
-function restoreCarouselScroll(track, keepLeft) {
+function visibleCarouselAnchor(track) {
+  if (!track) return null;
+  const cards = track.querySelectorAll(".block-carousel__item");
+  const left = track.getBoundingClientRect().left;
+  for (let i = 0; i < cards.length; i++) {
+    const rect = cards[i].getBoundingClientRect();
+    if (rect.right > left + 4) {
+      return {
+        key: cards[i].getAttribute("data-key") || "",
+        offset: rect.left - left,
+      };
+    }
+  }
+  return null;
+}
+
+function setCarouselScrollLeft(track, next) {
+  if (!track) return;
+  const max = Math.max(0, track.scrollWidth - track.clientWidth);
+  blockCarouselState.programmaticScroll = true;
+  track.scrollLeft = Math.max(0, Math.min(next, max));
+  clearTimeout(blockCarouselState.programmaticScrollTimer);
+  blockCarouselState.programmaticScrollTimer = setTimeout(function () {
+    blockCarouselState.programmaticScroll = false;
+  }, 250);
+}
+
+function applyCarouselAnchor(track, anchor) {
+  if (!track || !anchor || !anchor.key) return false;
+  const el = track.querySelector('.block-carousel__item[data-key="' + String(anchor.key).replace(/"/g, "") + '"]');
+  if (!el) return false;
+  const left = el.getBoundingClientRect().left - track.getBoundingClientRect().left + track.scrollLeft;
+  setCarouselScrollLeft(track, left - (Number(anchor.offset) || 0));
+  return true;
+}
+
+function restoreCarouselScroll(track, keepLeft, anchor) {
+  if (blockCarouselState.userBrowsing) {
+    if (applyCarouselAnchor(track, anchor)) return;
+    if (keepLeft > 0) setCarouselScrollLeft(track, keepLeft);
+    return;
+  }
   if (blockCarouselState.pinScrollKey) {
     revealPinnedCarouselCard();
     return;
   }
-  if (keepLeft > 0) track.scrollLeft = keepLeft;
+  if (applyCarouselAnchor(track, anchor)) return;
+  if (keepLeft > 0) setCarouselScrollLeft(track, keepLeft);
 }
 
 function carouselMountedCount(items) {
@@ -2317,6 +2770,7 @@ function paintCarouselTrack(track, keepLeft) {
     track.innerHTML = '<div class="portal-compact-note">No recent block data.</div>';
     return;
   }
+  const anchor = visibleCarouselAnchor(track);
   const count = carouselMountedCount(items);
   blockCarouselState.renderCount = count;
   const slice = items.slice(0, count);
@@ -2347,7 +2801,7 @@ function paintCarouselTrack(track, keepLeft) {
   } else {
     track.innerHTML = slice.map(blockCarouselCardHtml).join("");
   }
-  restoreCarouselScroll(track, keepLeft || 0);
+  restoreCarouselScroll(track, keepLeft || 0, anchor);
 }
 
 function oldestCarouselHeight() {
@@ -2409,7 +2863,7 @@ async function fetchOlderCarouselBlocks() {
       blockCarouselState.olderDone = incoming.length < BLOCK_CAROUSEL_CARD_LIMIT;
     }
     appendCarouselBlockItems(incoming);
-    mountCarouselBatch();
+    extendCarouselIfNeeded();
   } catch (_err) {
   } finally {
     blockCarouselState.olderLoading = false;
@@ -2424,17 +2878,46 @@ function mountCarouselBatch() {
   const next = Math.min(items.length, (blockCarouselState.renderCount || 0) + BLOCK_CAROUSEL_LAZY_BATCH);
   const add = items.slice(blockCarouselState.renderCount, next);
   if (!add.length) return false;
+  const anchor = visibleCarouselAnchor(track);
   track.insertAdjacentHTML("beforeend", add.map(blockCarouselCardHtml).join(""));
   blockCarouselState.renderCount = next;
+  applyCarouselAnchor(track, anchor);
   return true;
+}
+
+function noteCarouselUserScroll(track) {
+  if (!track) track = document.getElementById("blockCarouselTrack");
+  if (track) {
+    track.style.scrollSnapType = "none";
+    track.classList.add("is-user-scrolling");
+  }
+  blockCarouselState.userBrowsing = true;
+  blockCarouselState.pinScrollKey = "";
+}
+
+function onCarouselScrollIdle() {
+  blockCarouselState.userBrowsing = false;
+  const track = document.getElementById("blockCarouselTrack");
+  if (track) track.classList.remove("is-user-scrolling");
+  extendCarouselIfNeeded();
+}
+
+function scheduleCarouselScrollIdle() {
+  clearTimeout(blockCarouselState.scrollIdleTimer);
+  blockCarouselState.scrollIdleTimer = setTimeout(onCarouselScrollIdle, 180);
 }
 
 function extendCarouselIfNeeded() {
   const track = document.getElementById("blockCarouselTrack");
   if (!track) return;
-  if (track.scrollWidth - track.scrollLeft - track.clientWidth > 220) return;
-  if (mountCarouselBatch()) return;
-  fetchOlderCarouselBlocks();
+  let steps = 0;
+  while (track.scrollWidth - track.scrollLeft - track.clientWidth <= 220 && steps < 4) {
+    if (!mountCarouselBatch()) {
+      fetchOlderCarouselBlocks();
+      return;
+    }
+    steps += 1;
+  }
 }
 
 function renderBlockCarousel(d, mining) {
@@ -2467,10 +2950,8 @@ function scrollCarouselToKey(key) {
   let next = viewLeft;
   if (btnRight > viewRight - endPad) next = btnRight - track.clientWidth + endPad;
   if (btnLeft < next + startPad) next = btnLeft - startPad;
-  const max = Math.max(0, track.scrollWidth - track.clientWidth);
-  next = Math.max(0, Math.min(next, max));
   track.style.scrollSnapType = "none";
-  track.scrollLeft = next;
+  setCarouselScrollLeft(track, next);
 }
 
 function revealPinnedCarouselCard() {
@@ -2480,6 +2961,24 @@ function revealPinnedCarouselCard() {
     if (!blockCarouselState.pinScrollKey) return;
     scrollCarouselToKey(blockCarouselState.pinScrollKey);
   });
+}
+
+function currentMinedTipHeight() {
+  if (lastBlockHeight > 0) return lastBlockHeight;
+  let tip = 0;
+  (blockCarouselState.items || []).forEach(function (item) {
+    if (!item || !item.height) return;
+    const height = Number(item.height) || 0;
+    if (!height) return;
+    if (item.mining) {
+      tip = Math.max(tip, height - 1);
+      return;
+    }
+    if (!item._lookupContext || item.timestamp || item.hash || item.txCount) {
+      tip = Math.max(tip, height);
+    }
+  });
+  return tip;
 }
 
 function ensureCarouselItemForHeight(height, hash) {
@@ -2511,14 +3010,20 @@ function ensureCarouselItemForHeight(height, hash) {
 function ensureCarouselRangeForHeight(height, hash) {
   const h = Number(height);
   if (!Number.isFinite(h) || h < 0) return null;
+  const tip = currentMinedTipHeight();
+  const maxH = tip > 0 ? Math.min(h + BLOCK_CAROUSEL_LOOKUP_CONTEXT_RADIUS, tip) : h;
+  const minH = Math.max(0, h - BLOCK_CAROUSEL_LOOKUP_CONTEXT_RADIUS);
   const live = blockCarouselState.items.filter(function (b) { return b && b.mining; });
   const byKey = {};
   blockCarouselState.items.forEach(function (item) {
     if (!item || item.mining || !item.key) return;
+    const itemH = Number(item.height) || 0;
+    if (item._lookupContext && tip > 0 && itemH > tip && !item.timestamp && !item.hash && !item.txCount) {
+      return;
+    }
     byKey[item.key] = item;
   });
-  for (let n = h + BLOCK_CAROUSEL_LOOKUP_CONTEXT_RADIUS; n >= h - BLOCK_CAROUSEL_LOOKUP_CONTEXT_RADIUS; n--) {
-    if (n < 0) continue;
+  for (let n = maxH; n >= minH; n--) {
     const key = String(n);
     if (byKey[key]) {
       if (n === h && hash && !byKey[key].hash) byKey[key].hash = hash;
@@ -2546,6 +3051,66 @@ function ensureCarouselRangeForHeight(height, hash) {
   return byKey[String(h)] || null;
 }
 
+function carouselItemNeedsMeta(item) {
+  if (!item || item.mining) return false;
+  if (item._lookupContext || item._extra) {
+    return !item.timestamp || (!item.pool && !item.coinbase && !item.txCount && !item.hash);
+  }
+  return !item.timestamp;
+}
+
+function applyCarouselBlockMeta(block) {
+  const height = Number(block && block.height) || 0;
+  if (!height) return null;
+  const item = (blockCarouselState.items || []).find(function (b) { return b && b.key === String(height); });
+  if (!item || item.mining) return null;
+  const labels = blockLabelFromSource(block);
+  const timestamp = Number(block.timestamp || block.time) || 0;
+  const txCount = Number(block.tx_count || block.nTx || 0) || 0;
+  const size = Number(block.size || 0) || 0;
+  const hash = block.hash || block.id || "";
+  if (timestamp) item.timestamp = timestamp;
+  if (txCount) item.txCount = txCount;
+  if (size) item.size = size;
+  if (hash) item.hash = hash;
+  if (labels.pool) item.pool = labels.pool;
+  if (labels.coinbase) item.coinbase = labels.coinbase;
+  if (item.timestamp || item.hash || item.pool || item.coinbase || item.txCount) {
+    item._lookupContext = false;
+  }
+  return item;
+}
+
+async function hydrateCarouselRangeAroundHeight(height, hash) {
+  const h = Number(height);
+  if (!Number.isFinite(h) || h < 0) return;
+  const tip = currentMinedTipHeight();
+  const radius = BLOCK_CAROUSEL_LOOKUP_CONTEXT_RADIUS;
+  const maxH = tip > 0 ? Math.min(h + radius, tip) : h;
+  const minH = Math.max(0, h - radius);
+  ensureCarouselRangeForHeight(h, hash);
+  let needs = false;
+  for (let n = minH; n <= maxH; n++) {
+    const item = (blockCarouselState.items || []).find(function (b) { return b && b.key === String(n); });
+    if (!item || carouselItemNeedsMeta(item)) {
+      needs = true;
+      break;
+    }
+  }
+  if (!needs) return;
+  try {
+    const response = await blockvaseFetchWithTimeout(
+      "/recent-blocks?before=" + encodeURIComponent(String(maxH + 1)) + "&limit=" + Math.min(120, Math.max(1, maxH - minH + 1)),
+      8000
+    );
+    const data = await response.json();
+    const incoming = Array.isArray(data.blocks) ? data.blocks : [];
+    incoming.forEach(applyCarouselBlockMeta);
+    renderBlockCarouselRefresh();
+    revealPinnedCarouselCard();
+  } catch (_) {}
+}
+
 async function selectBlockCarouselItem(key, options) {
   const opts = options || {};
   const selectTxid = String(opts.selectTxid || "").trim();
@@ -2571,6 +3136,9 @@ async function selectBlockCarouselItem(key, options) {
   blockCarouselState.selected = item.key;
   blockCarouselState.loadingKey = item.key;
   blockCarouselState.pinScrollKey = item.key;
+  if (opts.hydrateNeighbors && item.height) {
+    void hydrateCarouselRangeAroundHeight(item.height, item.hash);
+  }
   renderBlockCarouselRefresh();
   updateMempoolBoardCopy(item);
   revealPinnedCarouselCard();
@@ -2751,9 +3319,17 @@ function initBlockCarousel() {
     if (!drag.active) return;
     e.preventDefault();
     track.scrollLeft = drag.startLeft - dx;
-    extendCarouselIfNeeded();
   });
-  track.addEventListener("scroll", extendCarouselIfNeeded, { passive: true });
+  track.addEventListener("scroll", function () {
+    if (blockCarouselState.programmaticScroll) return;
+    noteCarouselUserScroll(track);
+    scheduleCarouselScrollIdle();
+  }, { passive: true });
+  track.addEventListener("scrollend", function () {
+    if (blockCarouselState.programmaticScroll) return;
+    clearTimeout(blockCarouselState.scrollIdleTimer);
+    onCarouselScrollIdle();
+  }, { passive: true });
   track.addEventListener("pointerup", endDrag);
   track.addEventListener("pointercancel", endDrag);
   track.addEventListener("lostpointercapture", endDrag);
@@ -2773,7 +3349,7 @@ function initBlockCarousel() {
     }
     const btn = e.target.closest(".block-carousel__item");
     if (!btn || !track.contains(btn)) return;
-    selectBlockCarouselItem(btn.getAttribute("data-key"));
+    selectBlockCarouselItem(btn.getAttribute("data-key"), { hydrateNeighbors: true });
   }, true);
 }
 
@@ -2798,6 +3374,11 @@ async function loadMetrics() {
         '<div class="error-msg">Not connected to Bitcoin node. Ensure Bitcoin Knots is running and reachable.</div>';
       lastPoolShare = null;
       adoptDatumPool(d.datum_pool && typeof d.datum_pool === "object" ? d.datum_pool : null);
+      adoptLightning(d.lightning && typeof d.lightning === "object" ? d.lightning : null);
+      datumPoolLoadSettled = true;
+      lightningLoadSettled = true;
+      syncDatumPoolBoard(lastDatumPool);
+      syncLightningBoard(lastLightning);
       updateBlockCarouselAsOf("");
       syncPoolShareBoard(null);
       syncRetargetBar("");
@@ -2826,8 +3407,12 @@ async function loadMetrics() {
     updateBlockCarouselAsOf(asOfNote);
     lastPoolShare = d.pool_share && typeof d.pool_share === "object" ? d.pool_share : null;
     adoptDatumPool(d.datum_pool && typeof d.datum_pool === "object" ? d.datum_pool : null);
+    adoptLightning(d.lightning && typeof d.lightning === "object" ? d.lightning : null);
+    datumPoolLoadSettled = true;
+    lightningLoadSettled = true;
     mergeMetricPoint("viewer", viewerMetricPoint(d, mining));
     syncDatumPoolBoard(lastDatumPool);
+    syncLightningBoard(lastLightning);
     const gridHtml = metricBoard(
       "Chain overview",
       portalKpiStrip(
@@ -2979,18 +3564,15 @@ function bwModeNextLabel(mode) {
   return "Switch to glow mode";
 }
 
-function applyBwMode(mode) {
-  const bw = normalizeBwMode(mode);
-  document.documentElement.setAttribute("data-bw", bw);
-  if (document.body) document.body.setAttribute("data-bw", bw);
-  const btn = document.getElementById("bwModeToggle");
-  if (btn) {
-    btn.setAttribute("aria-label", bwModeNextLabel(bw));
-    btn.setAttribute("title", bwModeNextLabel(bw));
+function applyBwMode() {
+  document.documentElement.removeAttribute("data-bw");
+  document.documentElement.classList.remove("soft-skin");
+  if (document.body) {
+    document.body.removeAttribute("data-bw");
+    document.body.classList.remove("soft-skin");
   }
-  try {
-    localStorage.setItem("blockvase-bw", bw);
-  } catch (_err) {}
+  const leftover = document.getElementById("bwModeToggle");
+  if (leftover) leftover.remove();
   syncBwModeToMempoolIframe();
   if (typeof openTxExplorer._refreshPalette === "function") openTxExplorer._refreshPalette();
 }
@@ -3091,9 +3673,113 @@ function setPortalMempoolSearchStatus(message, isMiss, options) {
   }, isMiss ? 2200 : 1400);
 }
 
+function normalizeTxid(value) {
+  const q = String(value || "").trim().toLowerCase().replace(/^0x/, "");
+  return /^[0-9a-f]{64}$/.test(q) ? q : "";
+}
+
 function isCompleteTxidSearch(query) {
-  const q = String(query || "").trim().toLowerCase().replace(/^0x/, "");
-  return /^[0-9a-f]{64}$/.test(q);
+  return !!normalizeTxid(query);
+}
+
+function portalHashRaw() {
+  return String(window.location.hash || "").replace(/^#/, "");
+}
+
+function portalHashTabPart(name) {
+  const raw = String(name == null ? portalHashRaw() : name).replace(/^#/, "");
+  const qIndex = raw.indexOf("?");
+  return (qIndex === -1 ? raw : raw.slice(0, qIndex)).trim();
+}
+
+function parseViewerTxidFromLocation() {
+  const hash = portalHashRaw();
+  const qIndex = hash.indexOf("?");
+  if (qIndex !== -1) {
+    try {
+      const params = new URLSearchParams(hash.slice(qIndex + 1));
+      const fromHashQuery = normalizeTxid(params.get("tx") || params.get("txid"));
+      if (fromHashQuery) return fromHashQuery;
+    } catch (_) {}
+  }
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const fromQuery = normalizeTxid(params.get("tx") || params.get("txid"));
+    if (fromQuery) return fromQuery;
+  } catch (_) {}
+  const match = hash.match(/^(?:viewer\/)?tx[=/]([0-9a-fA-F]{64})$/i);
+  return match ? normalizeTxid(match[1]) : "";
+}
+
+function viewerTxLocationHash(txid) {
+  const id = normalizeTxid(txid);
+  return id ? "#viewer?tx=" + id : "#viewer";
+}
+
+let syncingViewerTxLocation = false;
+let portalMempoolSearch = function (_query, _fromSubmit) {};
+let cancelPortalMempoolSearch = function () {};
+
+function resetViewerToLiveMempool() {
+  cancelPortalMempoolSearch();
+  const input = document.getElementById("mempoolTxSearchInput");
+  if (input) input.value = "";
+  setPortalMempoolSearchStatus("");
+  setPortalSearchingNode(false);
+  clearViewerTxidFromLocation();
+  blockCarouselState.pendingSelectTxid = "";
+  closeTxExplorerPanel();
+  clearBlockTxsRetry();
+  const live = (blockCarouselState.items || []).find(function (b) { return b && b.mining; });
+  if (live) {
+    void selectBlockCarouselItem("live");
+  } else {
+    blockCarouselState.selected = "live";
+    blockCarouselState.loadingKey = "";
+    blockCarouselState.pinScrollKey = "live";
+    renderBlockCarouselRefresh();
+    postToMempoolIframe({ type: "blockvase-resume-mempool", selectTxid: "" });
+  }
+  window.scrollTo(0, 0);
+}
+
+function setViewerTxidInLocation(txid) {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("tx");
+  url.searchParams.delete("txid");
+  url.hash = viewerTxLocationHash(txid);
+  const next = url.pathname + url.search + url.hash;
+  const cur = window.location.pathname + window.location.search + window.location.hash;
+  if (cur === next) return;
+  syncingViewerTxLocation = true;
+  history.replaceState(null, "", next);
+  syncingViewerTxLocation = false;
+}
+
+function clearViewerTxidFromLocation() {
+  const url = new URL(window.location.href);
+  const hash = portalHashRaw();
+  const hasQueryTx = url.searchParams.has("tx") || url.searchParams.has("txid");
+  const hasHashTx = /(?:^|[?&])tx(?:id)?=/i.test(hash) || /^(?:viewer\/)?tx[=/]/i.test(hash);
+  if (!hasQueryTx && !hasHashTx) return;
+  url.searchParams.delete("tx");
+  url.searchParams.delete("txid");
+  url.hash = "#viewer";
+  const next = url.pathname + url.search + url.hash;
+  const cur = window.location.pathname + window.location.search + window.location.hash;
+  if (cur === next) return;
+  syncingViewerTxLocation = true;
+  history.replaceState(null, "", next);
+  syncingViewerTxLocation = false;
+}
+
+function applyViewerTxDeepLink() {
+  const txid = parseViewerTxidFromLocation();
+  if (!txid) return;
+  setViewerTxidInLocation(txid);
+  const input = document.getElementById("mempoolTxSearchInput");
+  if (input) input.value = txid;
+  portalMempoolSearch(txid, true);
 }
 
 function isCompleteBlockHeightSearch(query) {
@@ -3156,7 +3842,7 @@ function isBlockHeightSearch(query) {
   if (!data.txid && data.source === "block" && data.height != null) {
     const key = String(data.height);
     ensureCarouselRangeForHeight(data.height, data.hash);
-    const ok = await selectBlockCarouselItem(key, { force: true });
+    const ok = await selectBlockCarouselItem(key, { force: true, hydrateNeighbors: true });
     if (seq != null && seq !== portalSearchSeq) return false;
     if (ok) {
       setPortalMempoolSearchStatus("Showing block #" + formatNumber(data.height) + ".");
@@ -3184,7 +3870,7 @@ function isBlockHeightSearch(query) {
       );
       return true;
     }
-    const ok = await selectBlockCarouselItem(key, { selectTxid: data.txid, force: true, tx: data.tx, details: data.details });
+    const ok = await selectBlockCarouselItem(key, { selectTxid: data.txid, force: true, tx: data.tx, details: data.details, hydrateNeighbors: true });
     if (seq != null && seq !== portalSearchSeq) return false;
     if (ok) {
       setPortalMempoolSearchStatus(
@@ -3292,6 +3978,12 @@ function isBlockHeightSearch(query) {
     if (!isCompleteTxidSearch(q)) return;
     debounce = setTimeout(() => search(q, false), 120);
   });
+  portalMempoolSearch = search;
+  cancelPortalMempoolSearch = function () {
+    portalSearchSeq += 1;
+    clearTimeout(debounce);
+    setPortalMempoolSearchStatus("");
+  };
   window.addEventListener("message", (ev) => {
     if (ev.origin !== window.location.origin) return;
     if (ev.data?.type !== "blockvase-tx-search-result") return;
@@ -3334,8 +4026,11 @@ function initDeferredMempoolIframe() {
 }
 
 function normalizePortalTab(name) {
-  const raw = String(name || "").trim().toLowerCase();
+  const raw = portalHashTabPart(name).toLowerCase();
   if (!raw) return "viewer";
+  if (raw === "tx" || raw.indexOf("tx/") === 0 || raw.indexOf("tx=") === 0 || raw.indexOf("viewer/tx/") === 0) {
+    return "viewer";
+  }
   if (
     raw === "block-viewer" ||
     raw === "blockviewer" ||
@@ -3352,7 +4047,7 @@ function normalizePortalTab(name) {
 function initPortalTabs() {
   const buttons = Array.from(document.querySelectorAll(".portal-tab-nav [data-portal-tab]"));
   const panels = Array.from(document.querySelectorAll("[data-portal-panel]"));
-  const navTabNames = new Set(["viewer", "pool", "shop", "resources"]);
+  const navTabNames = new Set(["viewer", "pool", "lightning", "shop", "resources"]);
   const disabledNavTabs = new Set(["shop"]);
   if (!buttons.length || !panels.length) return null;
 
@@ -3385,14 +4080,50 @@ function initPortalTabs() {
       panel.hidden = !active;
       panel.classList.toggle("is-active", active);
     });
-    if (window.location.hash !== "#" + tabName) {
-      history.replaceState(null, "", "#" + tabName);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("tx");
+    url.searchParams.delete("txid");
+    if (tabName === "viewer") {
+      url.hash = viewerTxLocationHash(parseViewerTxidFromLocation());
+    } else {
+      url.hash = "#" + tabName;
+    }
+    const next = url.pathname + url.search + url.hash;
+    const cur = window.location.pathname + window.location.search + window.location.hash;
+    if (cur !== next) {
+      syncingViewerTxLocation = true;
+      history.replaceState(null, "", next);
+      syncingViewerTxLocation = false;
     }
   }
 
+  function currentPortalTab() {
+    const active = buttons.find((button) => button.classList.contains("is-active"));
+    return normalizePortalTab(active && active.dataset.portalTab);
+  }
+
+  function goPortalHome() {
+    resetViewerToLiveMempool();
+    showTab("viewer");
+  }
+
   buttons.forEach((button) => {
-    button.addEventListener("click", () => showTab(button.dataset.portalTab));
+    button.addEventListener("click", () => {
+      const tab = button.dataset.portalTab;
+      if (tab === "viewer" && currentPortalTab() === "viewer") {
+        resetViewerToLiveMempool();
+        return;
+      }
+      showTab(tab);
+    });
   });
+  const homeLink = document.getElementById("portalHomeLink");
+  if (homeLink) {
+    homeLink.addEventListener("click", function (event) {
+      event.preventDefault();
+      goPortalHome();
+    });
+  }
   document.addEventListener("click", (event) => {
     const link = event.target.closest("[data-portal-tab-link]");
     if (!link) return;
@@ -3400,7 +4131,12 @@ function initPortalTabs() {
     showTab(link.dataset.portalTabLink);
   });
   window.addEventListener("hashchange", () => {
+    if (syncingViewerTxLocation) return;
+    const txid = parseViewerTxidFromLocation();
     showTab(window.location.hash.replace("#", ""));
+    if (txid && normalizePortalTab(window.location.hash.replace("#", "")) === "viewer") {
+      portalMempoolSearch(txid, true);
+    }
   });
 
   showTab(window.location.hash.replace("#", ""));
@@ -5610,7 +6346,7 @@ function initBlockvaseOrderPortals(portalTabs) {
   }
 
   function currentPortalHash() {
-    return window.location.hash.replace("#", "");
+    return normalizePortalTab(window.location.hash.replace("#", ""));
   }
 
   function orderFormActive() {
@@ -5887,12 +6623,13 @@ const TX_FLOW_COLORS_BW_GLOW = [
   "#d9892a", "#f0a040", "#8a4a10", "#ffc878", "#b86a18",
 ];
 
+const TX_FLOW_COLORS_STUDIO = [
+  "#e4b07a", "#e09a52", "#c46a2e", "#b85a2e", "#d4894a",
+  "#8c4a28", "#a85224", "#c67a3a", "#d4a06a", "#9a5230",
+];
+
 function txFlowPalette() {
-  const bw = currentBwMode();
-  if (bw === "white") return TX_FLOW_COLORS_BW_WHITE;
-  if (bw === "black") return TX_FLOW_COLORS_BW_BLACK;
-  if (bw === "glow") return TX_FLOW_COLORS_BW_GLOW;
-  return document.body.dataset.theme === "ocean" ? TX_FLOW_COLORS_OCEAN : TX_FLOW_COLORS_DEFAULT;
+  return TX_FLOW_COLORS_STUDIO;
 }
 
 function txFlowHash(value) {
@@ -6277,18 +7014,11 @@ function txFlowNodeIsHighlighted(el) {
 }
 
 function txFlowFallbackColor() {
-  const bw = currentBwMode();
-  if (bw === "white") return "#111111";
-  if (bw === "black") return "#ffffff";
-  if (bw === "glow") return "#f7931a";
-  return "#f7931a";
+  return "#e09a52";
 }
 
 function txFlowHoverColor() {
-  const bw = currentBwMode();
-  if (bw === "white") return "#000000";
-  if (bw === "glow") return "#f7931a";
-  return "#ffffff";
+  return "#e4b07a";
 }
 
 function txFlowWireColor(el, txNode) {
@@ -6501,6 +7231,8 @@ function initTxDetailPanel() {
     }
     panel.classList.remove("expanded", "is-closing");
     panel.setAttribute("aria-hidden", "true");
+    openTxExplorer._txid = "";
+    clearViewerTxidFromLocation();
     postToMempoolIframe({ type: "blockvase-tx-deselect" });
   }
 
@@ -6601,16 +7333,22 @@ function initTxDetailPanel() {
 
   openTxExplorer = function (txid, details) {
     if (!txid) return;
-    if (txid === openTxExplorer._txid && panel.classList.contains("expanded") && panel.classList.contains("is-loading")) {
+    const normalized = normalizeTxid(txid) || String(txid).trim();
+    if (normalized === openTxExplorer._txid && panel.classList.contains("expanded") && panel.classList.contains("is-loading")) {
       return;
     }
-    openTxExplorer._txid = txid;
+    openTxExplorer._txid = normalized;
+    setViewerTxidInLocation(normalized);
+    const searchInput = document.getElementById("mempoolTxSearchInput");
+    if (searchInput && normalizeTxid(searchInput.value) !== normalizeTxid(normalized)) {
+      searchInput.value = normalized;
+    }
     const loadId = ++txDetailLoadSeq;
 
     cancelClosePanel();
     panel.classList.add("expanded");
     panel.setAttribute("aria-hidden", "false");
-    if (txidEl) txidEl.textContent = txid;
+    if (txidEl) txidEl.textContent = normalized;
     if (statusEl) statusEl.textContent = "";
     setTxDetailLoading(true);
     try {
@@ -6620,7 +7358,7 @@ function initTxDetailPanel() {
     const preload = details && typeof details === "object" ? normalizeExplorerTx(details) || details : null;
     const loadPromise = preload && !preload.error
       ? Promise.resolve(preload)
-      : blockvaseFetchWithTimeout("/tx/" + encodeURIComponent(txid), 10000).then(async (r) => {
+      : blockvaseFetchWithTimeout("/tx/" + encodeURIComponent(normalized), 10000).then(async (r) => {
         let tx = null;
         try {
           tx = await r.json();
@@ -7672,9 +8410,11 @@ async function init() {
   initBlockCarousel();
   initPoolShareChart();
   initDatumPoolBoard();
+  initLightningBoard();
   initTxDetailPanel();
   loadPrimePool().catch(function () {});
   await refreshDashboardMetrics();
+  applyViewerTxDeepLink();
   initDeferredMempoolIframe();
   startMetricsPolling();
   startPrimePoolPolling();
