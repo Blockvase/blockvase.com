@@ -2384,8 +2384,13 @@ const BLOCK_CAROUSEL_CARD_LIMIT = 24;
 const BLOCK_CAROUSEL_LAZY_BATCH = 8;
 const BLOCK_CAROUSEL_LOOKUP_CONTEXT_RADIUS = 12;
 const BLOCK_TXS_RETRY_MS = 16000;
+const BLOCK_CAROUSEL_HYDRATE_RETRY_MS = 4000;
+const BLOCK_CAROUSEL_HYDRATE_RETRY_MAX = 5;
 let blockTxsRetryTimer = 0;
 let blockTxsRetryKey = "";
+let carouselHydrateRetryTimer = 0;
+let carouselHydrateRetryKey = "";
+let carouselHydrateRetryCount = 0;
 const blockCarouselState = {
   selected: "live",
   loadingKey: "",
@@ -2651,6 +2656,60 @@ function carryCarouselLabels(items) {
   return items;
 }
 
+function carouselItemHasDisplayMeta(item) {
+  if (!item || item.mining) return true;
+  return !!(item.timestamp || item.pool || item.coinbase || item.size);
+}
+
+function carouselItemIsPending(item) {
+  return !!(item && !item.mining && (item._lookupContext || item._extra) && !carouselItemHasDisplayMeta(item));
+}
+
+function carouselBlockMetaFromSearchHit(data) {
+  const details = data && data.details && typeof data.details === "object" ? data.details : {};
+  const timestamp = Number(
+    (data && (data.timestamp || data.time || data.blocktime || data.block_time)) ||
+    details.blocktime ||
+    details.time ||
+    details.block_time ||
+    details.timestamp
+  ) || 0;
+  const txCount = Number(
+    (data && (data.tx_count || data.nTx || data.n_tx)) ||
+    details.tx_count ||
+    details.nTx ||
+    details.n_tx
+  ) || 0;
+  const size = Number(data && data.size) || 0;
+  const hash = String(
+    (data && (data.hash || data.blockhash || data.block_hash)) ||
+    details.blockhash ||
+    details.block_hash ||
+    details.blockHash ||
+    ""
+  ).trim();
+  const labels = blockLabelFromSource(Object.assign({}, details, data || {}));
+  return {
+    height: data && data.height,
+    timestamp: timestamp,
+    tx_count: txCount,
+    size: size,
+    hash: hash,
+    pool: (data && data.pool) || labels.pool,
+    coinbase_tag: (data && (data.coinbase_tag || data.coinbase)) || labels.coinbase,
+  };
+}
+
+function applySearchHitToCarouselItem(data) {
+  if (!data || data.height == null) return null;
+  const meta = carouselBlockMetaFromSearchHit(data);
+  const item = ensureCarouselRangeForHeight(data.height, meta.hash);
+  if (!item) return null;
+  applyCarouselBlockMeta(Object.assign({ height: data.height }, meta));
+  renderBlockCarouselRefresh();
+  return item;
+}
+
 function buildBlockCarouselItems(d, mining) {
   const mined = (d.recent_blocks || [])
     .filter(function (b) { return b && Number(b.height) > 0; })
@@ -2722,7 +2781,7 @@ function blockCarouselCardHtml(item) {
     selected ? "is-selected" : "",
     loading ? "is-loading" : "",
   ].filter(Boolean).join(" ");
-  const pending = !item.mining && !item.timestamp && !item.txCount && !item.hash && (item._lookupContext || item._extra);
+  const pending = carouselItemIsPending(item);
   const time = item.mining
     ? "mining " + formatDuration(item.secondsSinceTip)
     : pending
@@ -3225,7 +3284,7 @@ function ensureCarouselRangeForHeight(height, hash) {
 function carouselItemNeedsMeta(item) {
   if (!item || item.mining) return false;
   if (item._lookupContext || item._extra) {
-    return !item.timestamp || (!item.pool && !item.coinbase && !item.txCount && !item.hash);
+    return !carouselItemHasDisplayMeta(item);
   }
   return !item.timestamp;
 }
@@ -3246,10 +3305,42 @@ function applyCarouselBlockMeta(block) {
   if (hash) item.hash = hash;
   if (labels.pool) item.pool = labels.pool;
   if (labels.coinbase) item.coinbase = labels.coinbase;
-  if (item.timestamp || item.hash || item.pool || item.coinbase || item.txCount) {
+  if (carouselItemHasDisplayMeta(item)) {
     item._lookupContext = false;
   }
   return item;
+}
+
+function clearCarouselHydrateRetry() {
+  if (carouselHydrateRetryTimer) {
+    clearTimeout(carouselHydrateRetryTimer);
+    carouselHydrateRetryTimer = 0;
+  }
+  carouselHydrateRetryKey = "";
+  carouselHydrateRetryCount = 0;
+}
+
+function scheduleCarouselHydrateRetry(height, hash) {
+  const key = String(height);
+  if (carouselHydrateRetryKey === key && carouselHydrateRetryCount >= BLOCK_CAROUSEL_HYDRATE_RETRY_MAX) return;
+  if (carouselHydrateRetryTimer) clearTimeout(carouselHydrateRetryTimer);
+  if (carouselHydrateRetryKey !== key) {
+    carouselHydrateRetryKey = key;
+    carouselHydrateRetryCount = 0;
+  }
+  carouselHydrateRetryCount += 1;
+  carouselHydrateRetryTimer = setTimeout(function () {
+    carouselHydrateRetryTimer = 0;
+    void hydrateCarouselRangeAroundHeight(height, hash);
+  }, BLOCK_CAROUSEL_HYDRATE_RETRY_MS);
+}
+
+function carouselRangeStillNeedsMeta(minH, maxH) {
+  for (let n = minH; n <= maxH; n++) {
+    const item = (blockCarouselState.items || []).find(function (b) { return b && b.key === String(n); });
+    if (!item || carouselItemNeedsMeta(item)) return true;
+  }
+  return false;
 }
 
 async function hydrateCarouselRangeAroundHeight(height, hash) {
@@ -3260,15 +3351,10 @@ async function hydrateCarouselRangeAroundHeight(height, hash) {
   const maxH = tip > 0 ? Math.min(h + radius, tip) : h;
   const minH = Math.max(0, h - radius);
   ensureCarouselRangeForHeight(h, hash);
-  let needs = false;
-  for (let n = minH; n <= maxH; n++) {
-    const item = (blockCarouselState.items || []).find(function (b) { return b && b.key === String(n); });
-    if (!item || carouselItemNeedsMeta(item)) {
-      needs = true;
-      break;
-    }
+  if (!carouselRangeStillNeedsMeta(minH, maxH)) {
+    if (carouselHydrateRetryKey === String(h)) clearCarouselHydrateRetry();
+    return;
   }
-  if (!needs) return;
   try {
     const response = await blockvaseFetchWithTimeout(
       "/recent-blocks?before=" + encodeURIComponent(String(maxH + 1)) + "&limit=" + Math.min(120, Math.max(1, maxH - minH + 1)),
@@ -3279,7 +3365,11 @@ async function hydrateCarouselRangeAroundHeight(height, hash) {
     incoming.forEach(applyCarouselBlockMeta);
     renderBlockCarouselRefresh();
     revealPinnedCarouselCard();
-  } catch (_) {}
+    if (carouselRangeStillNeedsMeta(minH, maxH)) scheduleCarouselHydrateRetry(h, hash);
+    else if (carouselHydrateRetryKey === String(h)) clearCarouselHydrateRetry();
+  } catch (_) {
+    scheduleCarouselHydrateRetry(h, hash);
+  }
 }
 
 async function selectBlockCarouselItem(key, options) {
@@ -3345,12 +3435,13 @@ async function selectBlockCarouselItem(key, options) {
       selectTxid ? "Showing transaction; full block transactions are not available yet." : (e.message || "Could not load that block."),
       !selectTxid
     );
+    const fallbackTxs = selectTxid && opts.tx ? [opts.tx] : [];
     postToMempoolIframe({
       type: "blockvase-load-block",
       height: item.height,
       hash: item.hash || "",
-      txs: [],
-      selectTxid: "",
+      txs: fallbackTxs,
+      selectTxid: selectTxid || "",
     });
     if (selectTxid) openTxExplorer(selectTxid, opts.details);
     if (!e || e.retry !== false) scheduleBlockTxsRetry(item, opts);
@@ -5442,27 +5533,26 @@ function isBlockHeightSearch(query) {
 }
 
   async function showSearchMatch(data, seq) {
-  if (!data) return false;
+    if (!data) return false;
     if (seq != null && seq !== portalSearchSeq) return false;
-  if (!data.txid && data.source === "block" && data.height != null) {
-    const key = String(data.height);
-    ensureCarouselRangeForHeight(data.height, data.hash);
-    const ok = await selectBlockCarouselItem(key, { force: true, hydrateNeighbors: true });
-    if (seq != null && seq !== portalSearchSeq) return false;
-    if (ok) {
-      setPortalMempoolSearchStatus("Showing block #" + formatNumber(data.height) + ".");
+    if (!data.txid && data.source === "block" && data.height != null) {
+      applySearchHitToCarouselItem(data);
+      const ok = await selectBlockCarouselItem(String(data.height), { force: true, hydrateNeighbors: true });
+      if (seq != null && seq !== portalSearchSeq) return false;
+      if (ok) {
+        setPortalMempoolSearchStatus("Showing block #" + formatNumber(data.height) + ".");
+      }
+      return ok;
     }
-    return ok;
-  }
-  if (!data.txid) return false;
-  if (data.source === "block" && data.height == null && data.details) {
-    openTxExplorer(data.txid, data.details);
-    setPortalMempoolSearchStatus("Showing the matching transaction.");
-    return true;
-  }
+    if (!data.txid) return false;
+    if (data.source === "block" && data.height == null) {
+      if (data.details) openTxExplorer(data.txid, data.details);
+      setPortalMempoolSearchStatus("Searching node", false, { searching: true, hold: true });
+      return false;
+    }
     const wantLive = data.source === "mempool";
     const key = wantLive ? "live" : (data.height == null ? "" : String(data.height));
-  if (!wantLive && data.height != null) ensureCarouselRangeForHeight(data.height, data.hash);
+    if (!wantLive && data.height != null) applySearchHitToCarouselItem(data);
     const alreadyThere = blockCarouselState.selected === key || (wantLive && (!blockCarouselState.selected || blockCarouselState.selected === "live"));
     if (alreadyThere) {
       blockCarouselState.pinScrollKey = key;
@@ -5594,7 +5684,7 @@ function isBlockHeightSearch(query) {
     if (ev.data?.type !== "blockvase-tx-search-result") return;
     if (ev.data.seq != null && ev.data.seq !== portalSearchSeq) return;
     if (!ev.data.isMiss && ev.data.txid) {
-      if (blockCarouselState.loadingKey) {
+      if (blockCarouselState.loadingKey || (blockCarouselState.selected && blockCarouselState.selected !== "live")) {
         void locateAndShowSearchMatch(ev.data.q || input.value, ev.data.seq);
         return;
       }
