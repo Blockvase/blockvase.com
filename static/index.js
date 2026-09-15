@@ -3589,7 +3589,6 @@ async function loadMetrics() {
       portalKpiStrip(
         [
           portalKpiHtml("Height", formatNumber(mining.miningHeight || d.blocks || 0), {
-            highlight: true,
             chart: "viewer.height",
           }),
           portalKpiHtml("Difficulty", diffParts.value, {
@@ -3598,7 +3597,6 @@ async function loadMetrics() {
           }),
           portalKpiHtml("Network hash", hashParts.value, {
             unit: hashParts.unit,
-            accent: true,
             chart: "viewer.networkhashps",
           }),
           portalKpiHtml("Chain size", chainParts.value, {
@@ -3958,9 +3956,10 @@ function peerCensusOpenButtonHtml() {
   return (
     '<button type="button" class="btn-icon peer-census-open" id="peerCensusOpen" aria-label="Open listening peer map" aria-expanded="false" title="Listening peer map">' +
     '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
-    '<circle cx="6.5" cy="8" r="2.1"></circle>' +
-    '<circle cx="17.5" cy="7.5" r="2.1"></circle>' +
-    '<circle cx="12" cy="17" r="2.1"></circle>' +
+    '<circle cx="18" cy="5.5" r="2.25"></circle>' +
+    '<circle cx="6" cy="12" r="2.25"></circle>' +
+    '<circle cx="18" cy="18.5" r="2.25"></circle>' +
+    '<path d="M8.15 11.05 L15.85 6.45 M8.15 12.95 L15.85 17.55" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path>' +
     "</svg>" +
     '<span class="peer-census-open__sheen" aria-hidden="true"></span>' +
     "</button>"

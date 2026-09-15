@@ -9330,8 +9330,9 @@ body.portal-page .block-carousel__item--mining.is-selected {
 
 body.portal-page .block-carousel__item--mined .block-carousel__height,
 body.portal-page .block-carousel__item--mined.is-selected .block-carousel__height,
-body.portal-page .block-carousel__item--mined.is-loading .block-carousel__height {
-  color: var(--accent);
+body.portal-page .block-carousel__item--mined.is-loading .block-carousel__height,
+body.portal-page .block-carousel__item--mining .block-carousel__height {
+  color: #ffffff;
 }
 
 body.portal-page .block-carousel__item--mined.is-selected .block-carousel__meta,
@@ -9411,8 +9412,6 @@ body.portal-page .block-carousel__tag--pool {
   color: #2a1208;
 }
 
-body.portal-page .portal-kpi-value.highlight,
-body.portal-page .portal-kpi-value.portal-kpi-accent,
 body.portal-page a,
 body.portal-page .portal-tab-button.is-active,
 body.portal-page .portal-overline,
@@ -9444,10 +9443,10 @@ body.portal-page .pool-share-toggle__btn.is-active,
 body.portal-page .pool-share-row.is-hot .pool-share-name,
 body.portal-page .metric-fee-chip-value,
 body.portal-page .preview-banner strong,
-body.portal-page .block-carousel__item--mined .block-carousel__height,
 body.portal-page #metricsUpperDetail .portal-mini-block-height,
 body.portal-page #metricsUpperDetail .portal-node-connection,
 body.portal-page .viewer-peer-copy .datum-pool-copy__value,
+body.portal-page .datum-pool-copy:not(.datum-pool-copy--static) .datum-pool-copy__value,
 body.portal-page .peer-census-badge:not(.is-live),
 body.portal-page .peer-census-peers-table .datum-pool-copy__value,
 body.portal-page .peer-census-peers-table tbody tr.is-selected .peer-census-detail-host,
@@ -9467,6 +9466,21 @@ body.portal-page.settings-page .settings-kv-highlight,
   -webkit-background-clip: text;
   color: transparent;
   -webkit-text-fill-color: transparent;
+}
+
+body.portal-page .metric-board--chain .portal-kpi-value,
+body.portal-page .metric-board--chain .portal-kpi-value.highlight,
+body.portal-page .metric-board--chain .portal-kpi-value.portal-kpi-accent,
+body.portal-page .block-carousel__height,
+body.portal-page .block-carousel__item--mined .block-carousel__height,
+body.portal-page .block-carousel__item--mined.is-selected .block-carousel__height,
+body.portal-page .block-carousel__item--mined.is-loading .block-carousel__height,
+body.portal-page .block-carousel__item--mining .block-carousel__height {
+  background: none;
+  background-clip: border-box;
+  -webkit-background-clip: border-box;
+  color: #ffffff;
+  -webkit-text-fill-color: #ffffff;
 }
 
 body.portal-page .portal-brand-link,
@@ -9554,6 +9568,9 @@ body.portal-page .block-carousel__item--mined.is-loading .block-carousel__tag--c
 body.portal-page .viewer-peer-copy:hover,
 body.portal-page .viewer-peer-copy:focus-visible,
 body.portal-page .viewer-peer-copy.is-copied,
+body.portal-page .datum-pool-copy:not(.datum-pool-copy--static):hover,
+body.portal-page .datum-pool-copy:not(.datum-pool-copy--static):focus-visible,
+body.portal-page .datum-pool-copy:not(.datum-pool-copy--static).is-copied,
 body.portal-page .peer-census-peers-table .datum-pool-copy:hover,
 body.portal-page .peer-census-peers-table .datum-pool-copy:focus-visible,
 body.portal-page .peer-census-peers-table .datum-pool-copy.is-copied {
@@ -9566,6 +9583,12 @@ body.portal-page .peer-census-peers-table .datum-pool-copy.is-copied {
 body.portal-page .viewer-peer-copy:hover .datum-pool-copy__value,
 body.portal-page .viewer-peer-copy:focus-visible .datum-pool-copy__value,
 body.portal-page .viewer-peer-copy.is-copied .datum-pool-copy__value,
+body.portal-page .datum-pool-copy:not(.datum-pool-copy--static):hover .datum-pool-copy__label,
+body.portal-page .datum-pool-copy:not(.datum-pool-copy--static):focus-visible .datum-pool-copy__label,
+body.portal-page .datum-pool-copy:not(.datum-pool-copy--static).is-copied .datum-pool-copy__label,
+body.portal-page .datum-pool-copy:not(.datum-pool-copy--static):hover .datum-pool-copy__value,
+body.portal-page .datum-pool-copy:not(.datum-pool-copy--static):focus-visible .datum-pool-copy__value,
+body.portal-page .datum-pool-copy:not(.datum-pool-copy--static).is-copied .datum-pool-copy__value,
 body.portal-page .peer-census-peers-table .datum-pool-copy:hover .datum-pool-copy__value,
 body.portal-page .peer-census-peers-table .datum-pool-copy:focus-visible .datum-pool-copy__value,
 body.portal-page .peer-census-peers-table .datum-pool-copy.is-copied .datum-pool-copy__value {
@@ -9690,8 +9713,8 @@ body.portal-page .peer-census-open__sheen {
   background-size: 190% 100%;
   background-position: 120% 50%;
   animation: peer-census-open-sheen 1.35s cubic-bezier(0.22, 0.68, 0.16, 1) infinite;
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='6.5' cy='8' r='2.1' fill='black'/%3E%3Ccircle cx='17.5' cy='7.5' r='2.1' fill='black'/%3E%3Ccircle cx='12' cy='17' r='2.1' fill='black'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='6.5' cy='8' r='2.1' fill='black'/%3E%3Ccircle cx='17.5' cy='7.5' r='2.1' fill='black'/%3E%3Ccircle cx='12' cy='17' r='2.1' fill='black'/%3E%3C/svg%3E");
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='18' cy='5.5' r='2.25' fill='black'/%3E%3Ccircle cx='6' cy='12' r='2.25' fill='black'/%3E%3Ccircle cx='18' cy='18.5' r='2.25' fill='black'/%3E%3Cpath d='M8.15 11.05 L15.85 6.45 M8.15 12.95 L15.85 17.55' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='18' cy='5.5' r='2.25' fill='black'/%3E%3Ccircle cx='6' cy='12' r='2.25' fill='black'/%3E%3Ccircle cx='18' cy='18.5' r='2.25' fill='black'/%3E%3Cpath d='M8.15 11.05 L15.85 6.45 M8.15 12.95 L15.85 17.55' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round'/%3E%3C/svg%3E");
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
   -webkit-mask-position: calc(50% + var(--portal-btn-icon-nudge-x)) calc(50% + var(--portal-btn-icon-nudge-y));
