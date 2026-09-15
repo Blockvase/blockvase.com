@@ -2,6 +2,8 @@ function formatNumber(n) {
   return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
+const BLOCKVASE_VIEWER_PEER_CONNECTION = "addnode=node.blockvase.com:8333";
+
 function formatNodeConnection(subversion, nodeVersion) {
   const sent = String(nodeVersion || "").trim();
   if (sent) return sent.startsWith("v") ? sent : "v" + sent;
@@ -118,6 +120,91 @@ function metricEscape(s) {
     .replace(/"/g, "&quot;");
 }
 
+function overflowScrollEscape(token) {
+  const value = String(token || "");
+  if (window.CSS && typeof CSS.escape === "function") return CSS.escape(value);
+  return value.replace(/[^a-zA-Z0-9_-]/g, "\\$&");
+}
+
+function overflowScrollSelector(el) {
+  if (!el || el.nodeType !== 1) return "";
+  if (el.id) return "#" + overflowScrollEscape(el.id);
+  const cls = typeof el.className === "string" ? el.className.trim() : "";
+  if (!cls) return el.tagName ? el.tagName.toLowerCase() : "";
+  return cls
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(function (name) {
+      return "." + overflowScrollEscape(name);
+    })
+    .join("");
+}
+
+function overflowScrollIndex(root, el) {
+  const sel = overflowScrollSelector(el);
+  if (!sel || !root || !root.querySelectorAll) return 0;
+  try {
+    const matches = root.querySelectorAll(sel);
+    const idx = Array.prototype.indexOf.call(matches, el);
+    return idx < 0 ? 0 : idx;
+  } catch (_err) {
+    return 0;
+  }
+}
+
+function captureOverflowScroll(root) {
+  const host = root && root.querySelectorAll ? root : document;
+  const nodes = host.nodeType === 1 ? [host] : [];
+  if (host.querySelectorAll) host.querySelectorAll("*").forEach(function (el) { nodes.push(el); });
+  const items = [];
+  nodes.forEach(function (el) {
+    if (!el || el.nodeType !== 1) return;
+    const top = el.scrollTop || 0;
+    const left = el.scrollLeft || 0;
+    if (!top && !left) return;
+    items.push({
+      sel: overflowScrollSelector(el),
+      index: overflowScrollIndex(host, el),
+      top: top,
+      left: left,
+    });
+  });
+  return items;
+}
+
+function restoreOverflowScroll(root, items) {
+  if (!items || !items.length) return;
+  const host = root && root.querySelectorAll ? root : document;
+  function apply() {
+    items.forEach(function (item) {
+      if (!item || !item.sel) return;
+      let el = null;
+      try {
+        if (item.sel.charAt(0) === "#" && host.id && "#" + overflowScrollEscape(host.id) === item.sel) {
+          el = host;
+        } else {
+          const matches = host.querySelectorAll(item.sel);
+          el = matches[item.index] || matches[0] || null;
+        }
+      } catch (_err) {
+        el = null;
+      }
+      if (!el) return;
+      if (item.left) el.scrollLeft = item.left;
+      if (item.top) el.scrollTop = item.top;
+    });
+  }
+  apply();
+  requestAnimationFrame(apply);
+}
+
+function withOverflowScroll(root, fn) {
+  const saved = captureOverflowScroll(root);
+  const result = fn();
+  restoreOverflowScroll(root, saved);
+  return result;
+}
+
 function formatMetricsAsOf(value) {
   let d;
   if (value == null || value === "") {
@@ -174,6 +261,7 @@ const metricHistory = {
   viewer: [],
   pool: [],
   lightning: [],
+  census: [],
   loaded: false,
   loading: null,
 };
@@ -279,7 +367,10 @@ function metricSparkPath(values, width, height, padY) {
   const inner = Math.max(1, h - pad * 2);
   if (span <= 0) {
     const y = (h * 0.58).toFixed(2);
-    return { line: "M0," + y + " L" + w + "," + y, fill: "" };
+    return {
+      line: "M0," + y + " L" + w + "," + y,
+      fill: "M0," + h + " L0," + y + " L" + w + "," + y + " L" + w + "," + h + " Z",
+    };
   }
   function yAt(v) {
     return pad + (1 - (v - min) / span) * inner;
@@ -333,7 +424,7 @@ function paintMetricChart(svg) {
     const tone = index === 0 ? "high" : index === 1 ? "med" : "low";
     const fill =
       index === 0
-        ? '<path class="metric-spark-fill" d="' + d.fill + '" fill="url(#' + fid + ')"></path>'
+        ? '<path class="metric-spark-fill" d="' + d.fill + '" fill="url(#' + fid + ')" style="fill:url(#' + fid + ')"></path>'
         : "";
     return (
       fill +
@@ -343,6 +434,8 @@ function paintMetricChart(svg) {
       d.line +
       '" stroke="url(#' +
       gid +
+      ')" style="stroke:url(#' +
+      gid +
       ')"></path>'
     );
   }).join("");
@@ -350,13 +443,17 @@ function paintMetricChart(svg) {
     '<defs>' +
     '<linearGradient id="' + gid + '" x1="0" y1="1" x2="1" y2="0">' +
     '<stop offset="0%" stop-color="#c46a2e"/>' +
+    '<stop offset="16%" stop-color="#cc7838"/>' +
     '<stop offset="34%" stop-color="#d4894a"/>' +
+    '<stop offset="52%" stop-color="#dc964e"/>' +
     '<stop offset="68%" stop-color="#e09a52"/>' +
-    '<stop offset="100%" stop-color="#e4a86a"/>' +
+    '<stop offset="84%" stop-color="#e4a86a"/>' +
+    '<stop offset="100%" stop-color="#e8b070"/>' +
     '</linearGradient>' +
     '<linearGradient id="' + fid + '" x1="0" y1="0" x2="0" y2="1">' +
-    '<stop offset="0%" stop-color="#e09a52" stop-opacity="0.18"/>' +
-    '<stop offset="100%" stop-color="#e09a52" stop-opacity="0"/>' +
+    '<stop offset="0%" stop-color="#e8b070" stop-opacity="0.18"/>' +
+    '<stop offset="48%" stop-color="#e09a52" stop-opacity="0.08"/>' +
+    '<stop offset="100%" stop-color="#c46a2e" stop-opacity="0"/>' +
     '</linearGradient>' +
     '</defs>' +
     paths;
@@ -498,10 +595,15 @@ function portalKpiHtml(label, value, opts) {
     ? '<span class="portal-kpi-unit">' + metricEscape(opts.unit) + "</span>"
     : "";
   const chart = opts.chart ? metricSparkSvg(opts.chart, opts.series) : "";
+  const tool = opts.tool || "";
   return (
-    '<div class="portal-kpi" role="group" aria-label="' +
+    '<div class="portal-kpi' +
+    (tool ? " portal-kpi--with-tool" : "") +
+    '" role="group" aria-label="' +
     metricEscape(label) +
-    '"><span class="portal-kpi-label">' +
+    '">' +
+    (tool ? '<div class="portal-kpi-tool">' + tool + "</div>" : "") +
+    '<span class="portal-kpi-label">' +
     metricEscape(label) +
     '</span><span class="' +
     valueClasses +
@@ -862,7 +964,11 @@ function syncPoolShareBoard(share) {
   else if (asof && !nextAsof) asof.remove();
   const body = existing.querySelector(".pool-share-body");
   const nextBody = next.querySelector(".pool-share-body");
-  if (body && nextBody) body.innerHTML = nextBody.innerHTML;
+  if (body && nextBody) {
+    withOverflowScroll(body, function () {
+      body.innerHTML = nextBody.innerHTML;
+    });
+  }
   const top = existing.querySelector(".pool-share-summary-top");
   const toggle = existing.querySelector(".pool-share-toggle");
   const nextToggle = next.querySelector(".pool-share-toggle");
@@ -1855,7 +1961,9 @@ function syncDatumPoolBoard(pool, emptyDoc) {
   const host = document.getElementById("datumPoolBoard");
   if (!host) return;
   if (datumPoolUsable(pool)) mergeMetricPoint("pool", poolMetricPoint(pool));
-  host.innerHTML = datumPoolBoardHtml(pool, emptyDoc);
+  withOverflowScroll(host, function () {
+    host.innerHTML = datumPoolBoardHtml(pool, emptyDoc);
+  });
   paintMetricCharts(host);
 }
 
@@ -2193,7 +2301,9 @@ function syncLightningBoard(lightning) {
   const host = document.getElementById("lightningBoard");
   if (!host) return;
   if (lightningUsable(lightning)) mergeMetricPoint("lightning", lightningMetricPoint(lightning));
-  host.innerHTML = lightningBoardHtml(lightning);
+  withOverflowScroll(host, function () {
+    host.innerHTML = lightningBoardHtml(lightning);
+  });
   paintMetricCharts(host);
 }
 
@@ -2672,12 +2782,73 @@ function currentCarouselItem() {
 function updateViewerTabAsOf(note) {
   const asof = document.getElementById("viewerTabAsOf");
   if (!asof) return;
-  asof.textContent = note || "";
-  asof.hidden = !note;
+  if (!note) {
+    asof.textContent = "";
+    asof.hidden = true;
+    return;
+  }
+  const compactNote = compactViewerTabAsOf(note);
+  asof.hidden = false;
+  asof.innerHTML =
+    '<span class="viewer-tab-asof__time viewer-tab-asof__time--full">' +
+    metricEscape(note) +
+    "</span>" +
+    '<span class="viewer-tab-asof__time viewer-tab-asof__time--compact">' +
+    metricEscape(compactNote) +
+    "</span>" +
+    '<button type="button" class="datum-pool-copy viewer-peer-copy" data-viewer-peer-copy data-copy="' +
+    metricEscape(BLOCKVASE_VIEWER_PEER_CONNECTION) +
+    '">' +
+    '<span class="datum-pool-copy__value">' +
+    viewerPeerConnectionHtml() +
+    "</span>" +
+    "</button>";
 }
 
 function updateBlockCarouselAsOf(note) {
   updateViewerTabAsOf(note);
+}
+
+function compactViewerTabAsOf(note) {
+  const text = String(note || "");
+  const m = text.match(/(\d{1,2}:\d{2})(?::\d{2})?\s*([AP]M)?\s*([A-Z]{2,5})?\s*$/i);
+  if (!m) return text;
+  return "As of " + m[1] + (m[2] ? " " + m[2].toUpperCase() : "") + (m[3] ? " " + m[3].toUpperCase() : "");
+}
+
+function viewerPeerConnectionHtml() {
+  const text = BLOCKVASE_VIEWER_PEER_CONNECTION;
+  const prefix = "addnode=";
+  if (!text.startsWith(prefix)) return metricEscape(text);
+  return (
+    '<span class="viewer-peer-copy__prefix">' +
+    metricEscape(prefix) +
+    "</span>" +
+    '<span class="viewer-peer-copy__host">' +
+    metricEscape(text.slice(prefix.length)) +
+    "</span>"
+  );
+}
+
+function initViewerPeerCopy() {
+  const asof = document.getElementById("viewerTabAsOf");
+  if (!asof) return;
+  asof.addEventListener("click", function (event) {
+    const btn = event.target.closest("[data-viewer-peer-copy]");
+    if (!btn || !asof.contains(btn)) return;
+    event.preventDefault();
+    const text = btn.getAttribute("data-copy") || "";
+    const value = btn.querySelector(".datum-pool-copy__value") || btn;
+    const original = value.innerHTML;
+    copyTextToClipboard(text, btn).then(function (ok) {
+      btn.classList.add("is-copied");
+      value.textContent = ok ? "Copied" : "Copy failed";
+      setTimeout(function () {
+        btn.classList.remove("is-copied");
+        value.innerHTML = original;
+      }, 1000);
+    });
+  });
 }
 
 function updateMempoolBoardCopy() {
@@ -3439,6 +3610,7 @@ async function loadMetrics() {
           }),
           portalKpiHtml("Server node peers", formatNumber(d.connections || 0), {
             chart: "viewer.connections",
+            tool: peerCensusOpenButtonHtml(),
           }),
         ],
         "portal-kpi-strip--in-board"
@@ -3498,6 +3670,7 @@ async function loadMetrics() {
     if (upperDetailEl) upperDetailEl.innerHTML = upperDetailHtml;
     paintMetricCharts(document.getElementById("metricsGrid"));
     paintMetricCharts(upperDetailEl);
+    bindPeerCensusOpen();
 
     if (d.blocks > lastBlockHeight && lastBlockHeight > 0) {
       setTimeout(() => {
@@ -3720,6 +3893,1438 @@ let syncingViewerTxLocation = false;
 let portalMempoolSearch = function (_query, _fromSubmit) {};
 let cancelPortalMempoolSearch = function () {};
 
+const PEER_CENSUS_POLL_MS = 45000;
+const PEER_CENSUS_RETRY_MS = 8000;
+const PEER_CENSUS_MOVE_MS = 720;
+const PEER_CENSUS_UA_ORDER = [
+  "knots",
+  "core",
+  "futurebit",
+  "bitcoinj",
+  "bcoin",
+  "btcd",
+  "crawler",
+  "other",
+  "unknown",
+];
+const PEER_CENSUS_UA_LABEL = {
+  knots: "Knots",
+  core: "Core",
+  futurebit: "FutureBit",
+  bitcoinj: "BitcoinJ",
+  bcoin: "bcoin",
+  btcd: "btcd",
+  crawler: "Crawler",
+  other: "Other",
+  unknown: "Unknown",
+};
+const peerCensusState = {
+  open: false,
+  loading: false,
+  timer: 0,
+  retryTimer: 0,
+  data: null,
+  selectedKey: "",
+  hoverKey: "",
+  layout: [],
+  clusters: [],
+  splitX: 0,
+  hubKey: "",
+  layoutKey: "",
+  size: { w: 0, h: 0 },
+  raf: 0,
+  now: 0,
+  edgeLayer: null,
+  edgeCacheKey: "",
+  moving: false,
+  allowTween: false,
+  cluster: "location",
+};
+
+function peerCensusKey(node) {
+  return [
+    String((node && node.host) || ""),
+    String((node && node.port) || ""),
+    String((node && node.address_type) || ""),
+    String((node && node.network) || ""),
+  ].join("|");
+}
+
+function peerCensusPinKey(node) {
+  return String((node && node.host) || "") + "|" + String((node && node.port) || "");
+}
+
+function peerCensusOpenButtonHtml() {
+  return (
+    '<button type="button" class="btn-icon peer-census-open" id="peerCensusOpen" aria-label="Open listening peer map" aria-expanded="false" title="Listening peer map">' +
+    '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
+    '<circle cx="6.5" cy="8" r="2.1"></circle>' +
+    '<circle cx="17.5" cy="7.5" r="2.1"></circle>' +
+    '<circle cx="12" cy="17" r="2.1"></circle>' +
+    "</svg>" +
+    '<span class="peer-census-open__sheen" aria-hidden="true"></span>' +
+    "</button>"
+  );
+}
+
+function syncPeerCensusOpenButton() {
+  const btn = document.getElementById("peerCensusOpen");
+  if (!btn) return;
+  btn.classList.toggle("is-open", peerCensusState.open);
+  btn.setAttribute("aria-expanded", peerCensusState.open ? "true" : "false");
+  btn.setAttribute("aria-label", peerCensusState.open ? "Close listening peer map" : "Open listening peer map");
+}
+
+function bindPeerCensusOpen() {
+  const btn = document.getElementById("peerCensusOpen");
+  if (!btn) return;
+  btn.addEventListener("click", function (event) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (peerCensusState.open) closePeerCensusPanel();
+    else openPeerCensusPanel();
+  });
+  syncPeerCensusOpenButton();
+}
+
+function peerCensusHash(text) {
+  let hash = 2166136261;
+  const value = String(text || "");
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function peerCensusFormatHost(node) {
+  const host = String((node && node.host) || "");
+  const port = node && node.port != null ? String(node.port) : "";
+  if (!host) return port || "Unknown";
+  const wrapped = node.address_type === "ipv6" ? "[" + host + "]" : host;
+  return port ? wrapped + ":" + port : wrapped;
+}
+
+function peerCensusAddNodeLine(node) {
+  return "addnode=" + peerCensusFormatHost(node);
+}
+
+function reliableBlake2bPeers(nodes) {
+  const list = (nodes || []).filter(function (node) {
+    return node && node.network === "blake2b" && node.host;
+  });
+  if (!list.length) return [];
+  let maxHeight = 0;
+  let maxOk = 0;
+  list.forEach(function (node) {
+    const height = Number(node.start_height) || 0;
+    const ok = Number(node.ok_count) || 0;
+    if (height > maxHeight) maxHeight = height;
+    if (ok > maxOk) maxOk = ok;
+  });
+  const minOk = maxOk ? Math.max(3, Math.floor(maxOk * 0.5)) : 0;
+  const scored = list.filter(function (node) {
+    const height = Number(node.start_height) || 0;
+    const ok = Number(node.ok_count) || 0;
+    if (maxHeight && height < maxHeight - 50) return false;
+    if (minOk && ok < minOk) return false;
+    return true;
+  });
+  scored.sort(function (a, b) {
+    const ok = (Number(b.ok_count) || 0) - (Number(a.ok_count) || 0);
+    if (ok) return ok;
+    const height = (Number(b.start_height) || 0) - (Number(a.start_height) || 0);
+    if (height) return height;
+    const portA = Number(a.port) === 8333 ? 0 : 1;
+    const portB = Number(b.port) === 8333 ? 0 : 1;
+    if (portA !== portB) return portA - portB;
+    return peerCensusFormatHost(a).localeCompare(peerCensusFormatHost(b));
+  });
+  const seen = {};
+  const out = [];
+  scored.forEach(function (node) {
+    const key = node.prefix || "host:" + String(node.host || "");
+    if (seen[key]) return;
+    seen[key] = true;
+    out.push(node);
+  });
+  return out.slice(0, 16);
+}
+
+function peerCensusNetworkLabel(network) {
+  return network === "blake2b" ? "BLAKE2b" : "SHA-256";
+}
+
+function peerCensusAddressLabel(type) {
+  if (type === "ipv6") return "IPv6";
+  if (type === "onion") return "Onion";
+  return "IPv4";
+}
+
+function peerCensusUaFamily(node) {
+  const value = String((node && node.ua_family) || "").trim().toLowerCase();
+  return PEER_CENSUS_UA_LABEL[value] ? value : "unknown";
+}
+
+function peerCensusUaLabel(node) {
+  return PEER_CENSUS_UA_LABEL[peerCensusUaFamily(node)] || "Unknown";
+}
+
+function peerCensusPrefixKey(node) {
+  if (!node) return "none";
+  if (node.address_type === "onion") return "onion";
+  return String(node.prefix || "").trim() || "none";
+}
+
+function peerCensusLocationKey(node) {
+  if (!node) return "unknown";
+  if (node.address_type === "onion") return "onion";
+  const cc = String(node.as_cc || "").trim().toUpperCase();
+  return cc.length === 2 ? cc : "unknown";
+}
+
+function peerCensusLocationLabel(key) {
+  if (key === "onion") return "Onion";
+  if (key === "other") return "Other";
+  if (key === "unknown") return "Unknown";
+  return String(key || "").toUpperCase();
+}
+
+function peerCensusAsnLabel(node) {
+  const asn = node && node.asn;
+  if (asn == null || asn === "") return "No ASN";
+  const cc = node.as_cc ? " " + String(node.as_cc) : "";
+  return "AS" + String(asn) + cc;
+}
+
+function peerCensusNodeLabel(node) {
+  const bits = [peerCensusUaLabel(node)];
+  if (node && node.asn != null && node.asn !== "") bits.push(peerCensusAsnLabel(node));
+  else if (node && node.address_type === "onion") bits.push("Onion");
+  const prefix = peerCensusPrefixKey(node);
+  if (prefix !== "none" && prefix !== "onion") bits.push(prefix);
+  return bits.join(" · ");
+}
+
+function peerCensusBadgeText(crawl, summary) {
+  crawl = crawl || {};
+  const reachable = Number(
+    crawl.reachable != null ? crawl.reachable : (summary && summary.reachable) || 0
+  ) || 0;
+  if (String(crawl.state || "").toLowerCase() === "updating") {
+    return "Live, " + formatNumber(reachable) + " listening nodes";
+  }
+  const pct = Number(crawl.progress_percent);
+  if (Number.isFinite(pct)) return "Building map, " + pct.toFixed(2) + "%";
+  return "Building map";
+}
+
+function peerCensusProgressText(crawl, updatedAt) {
+  crawl = crawl || {};
+  const bits = [];
+  if (crawl.tried != null) bits.push(formatNumber(crawl.tried) + " tried");
+  if (crawl.untried != null) bits.push(formatNumber(crawl.untried) + " untried");
+  if (crawl.known_addresses != null) bits.push(formatNumber(crawl.known_addresses) + " known");
+  const asOf = formatMetricsAsOf(updatedAt);
+  if (asOf) bits.push("as of " + asOf);
+  return bits.join(" · ");
+}
+
+function censusMetricPoint(payload) {
+  const summary = (payload && payload.summary) || {};
+  const crawl = (payload && payload.crawl) || {};
+  const t = Number(payload && payload.updated_at);
+  return {
+    t: Number.isFinite(t) && t > 1e9 ? t : Math.floor(Date.now() / 1000),
+    reachable: Number(summary.reachable != null ? summary.reachable : crawl.reachable) || 0,
+    blake2b: Number(summary.blake2b != null ? summary.blake2b : crawl.blake2b) || 0,
+    sha256: Number(summary.sha256 != null ? summary.sha256 : crawl.sha256) || 0,
+    ipv4: Number(summary.ipv4) || 0,
+    ipv6: Number(summary.ipv6) || 0,
+    onion: Number(summary.onion) || 0,
+    edges: Number(summary.edges) || 0,
+    edges_same: Number(summary.edges_same) || 0,
+    edges_cross: Number(summary.edges_cross) || 0,
+  };
+}
+
+function renderPeerCensusCounts(summary) {
+  const host = document.getElementById("peerCensusCounts");
+  if (!host) return;
+  summary = summary || {};
+  const main = [
+    portalKpiHtml("Reachable", formatNumber(summary.reachable || 0), { chart: "census.reachable" }),
+    portalKpiHtml("BLAKE2b", formatNumber(summary.blake2b || 0), { chart: "census.blake2b" }),
+    portalKpiHtml("SHA-256", formatNumber(summary.sha256 || 0), { chart: "census.sha256" }),
+    portalKpiHtml("IPv4", formatNumber(summary.ipv4 || 0), { chart: "census.ipv4" }),
+    portalKpiHtml("IPv6", formatNumber(summary.ipv6 || 0), { chart: "census.ipv6" }),
+    portalKpiHtml("Onion", formatNumber(summary.onion || 0), { chart: "census.onion" }),
+  ];
+  const links = [
+    portalKpiHtml("Links", formatNumber(summary.edges || 0), { chart: "census.edges" }),
+    portalKpiHtml("Same net", formatNumber(summary.edges_same || 0), { chart: "census.edges_same" }),
+    portalKpiHtml("Cross net", formatNumber(summary.edges_cross || 0), { chart: "census.edges_cross" }),
+  ];
+  host.innerHTML =
+    '<section class="metric-board metric-board--chain metric-board--dense" aria-label="Listening peers">' +
+    portalKpiStrip(main, "portal-kpi-strip--in-board") +
+    portalKpiStrip(links, "portal-kpi-strip--in-board") +
+    "</section>";
+  paintMetricCharts(host);
+}
+
+function peerCensusNodeByKey(key) {
+  if (!key) return null;
+  return ((peerCensusState.data && peerCensusState.data.nodes) || []).find(function (node) {
+    return peerCensusKey(node) === key;
+  }) || null;
+}
+
+function selectPeerCensusNode(key, fromTable) {
+  const node = peerCensusNodeByKey(key);
+  peerCensusState.selectedKey = node ? key : "";
+  renderPeerCensusDetail(node);
+  syncPeerCensusPeerRows();
+  paintPeerCensusMap();
+  if (fromTable && node) {
+    const host = document.getElementById("peerCensusDetail");
+    if (host) host.scrollIntoView({ block: "nearest" });
+  }
+}
+
+function syncPeerCensusPeerRows() {
+  const body = document.getElementById("peerCensusPeersBody");
+  if (!body) return;
+  [].forEach.call(body.rows, function (row) {
+    row.classList.toggle("is-selected", row.getAttribute("data-peer-key") === peerCensusState.selectedKey);
+  });
+}
+
+function renderPeerCensusDetail(node) {
+  const host = document.getElementById("peerCensusDetail");
+  if (!host) return;
+  if (!node) {
+    host.hidden = true;
+    host.innerHTML = "";
+    return;
+  }
+  host.hidden = false;
+  const services = (node.services_decoded || []).filter(Boolean).join(", ");
+  const rows = [
+    ["Host", '<span class="peer-census-detail-host">' + escapeHtml(peerCensusFormatHost(node)) + "</span>"],
+    ["Network", escapeHtml(peerCensusNetworkLabel(node.network))],
+    ["Address", escapeHtml(peerCensusAddressLabel(node.address_type))],
+    ["Location", escapeHtml(peerCensusLocationLabel(peerCensusLocationKey(node)))],
+    ["Family", escapeHtml(peerCensusUaLabel(node))],
+    ["Prefix", escapeHtml(node.prefix || (node.address_type === "onion" ? "Onion" : "—"))],
+    ["ASN", escapeHtml(node.asn != null && node.asn !== "" ? peerCensusAsnLabel(node) : "—")],
+    ["Services", escapeHtml(node.services_group && node.services_group !== "base" ? node.services_group : services || "—")],
+    ["Agent", escapeHtml(node.user_agent || "—")],
+    ["Height", escapeHtml(node.start_height == null ? "—" : formatNumber(node.start_height))],
+    ["Last ok", escapeHtml(node.last_ok ? formatTimeAgo(node.last_ok) : "—")],
+  ];
+  host.innerHTML =
+    '<h3 class="peer-census-detail-title">Peer details</h3><dl>' +
+    rows
+      .map(function (row) {
+        return "<dt>" + metricEscape(row[0]) + "</dt><dd>" + row[1] + "</dd>";
+      })
+      .join("") +
+    "</dl>";
+}
+
+function peerCensusGroupBy(nodes, keyFn) {
+  const groups = {};
+  (nodes || []).forEach(function (node) {
+    const key = keyFn(node);
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(node);
+  });
+  return groups;
+}
+
+function peerCensusFamilyItems(nodes) {
+  const families = peerCensusGroupBy(nodes, peerCensusUaFamily);
+  const items = [];
+  const leftover = [];
+  PEER_CENSUS_UA_ORDER.forEach(function (key) {
+    const list = families[key] || [];
+    if (!list.length) return;
+    if (list.length >= 24 && key !== "unknown") {
+      items.push({ key: key, nodes: list, weight: list.length });
+    } else {
+      leftover.push.apply(leftover, list);
+    }
+  });
+  if (leftover.length >= 24) {
+    items.push({ key: "other", nodes: leftover, weight: leftover.length });
+  } else if (leftover.length && items.length) {
+    const host = items.reduce(function (best, item) {
+      return item.weight > best.weight ? item : best;
+    }, items[0]);
+    host.nodes = host.nodes.concat(leftover);
+    host.weight = host.nodes.length;
+  } else if (leftover.length) {
+    items.push({ key: "other", nodes: leftover, weight: leftover.length });
+  }
+  return items;
+}
+
+function peerCensusEstimateLabelWidth(label) {
+  const text = String(label || "");
+  let width = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i);
+    width += code <= 32 ? 3 : code < 65 ? 5.1 : 6.6;
+  }
+  return Math.ceil(width + 14);
+}
+
+function peerCensusLocationItems(nodes, box) {
+  const groups = peerCensusGroupBy(nodes, peerCensusLocationKey);
+  const items = [];
+  const leftover = [];
+  const onion = groups.onion || [];
+  const gap = 12;
+  const colMin = peerCensusEstimateLabelWidth("Onion");
+  const colsPerRow = Math.max(2, Math.floor((Math.max(colMin, (box && box.w) || colMin) + gap) / (colMin + gap)));
+  const maxSlots = Math.max(3, colsPerRow * 2);
+  const namedCap = Math.max(1, Math.min(7, maxSlots - (onion.length ? 1 : 0) - 1));
+  delete groups.onion;
+  Object.keys(groups)
+    .sort(function (a, b) {
+      const diff = groups[b].length - groups[a].length;
+      return diff || a.localeCompare(b);
+    })
+    .forEach(function (key, index) {
+      const list = groups[key];
+      if (index < namedCap && list.length >= 6) {
+        items.push({ key: key, nodes: list, weight: list.length });
+      } else {
+        leftover.push.apply(leftover, list);
+      }
+    });
+  if (onion.length) items.push({ key: "onion", nodes: onion, weight: onion.length });
+  if (leftover.length) items.push({ key: "other", nodes: leftover, weight: leftover.length });
+  return items;
+}
+
+function peerCensusClusterItems(nodes, box) {
+  return peerCensusState.cluster === "family" ? peerCensusFamilyItems(nodes) : peerCensusLocationItems(nodes, box);
+}
+
+function peerCensusClusterLabel(item) {
+  if (peerCensusState.cluster === "family") return PEER_CENSUS_UA_LABEL[item.key] || item.key;
+  return peerCensusLocationLabel(item.key);
+}
+
+function peerCensusClusterCount(item) {
+  if (!item) return 0;
+  if (item.nodes && item.nodes.length) return item.nodes.length;
+  return item.weight || 0;
+}
+
+function peerCensusClusterCaption(item) {
+  return peerCensusClusterLabel(item) + " " + formatNumber(peerCensusClusterCount(item));
+}
+
+function peerCensusPackBoxes(items, box, gap, axis) {
+  if (!items.length) return [];
+  gap = gap || 0;
+  if (items.length === 1) return [{ item: items[0], box: box }];
+  const horizontal = axis ? axis === "x" : box.w >= box.h;
+  const avail = Math.max(1, (horizontal ? box.w : box.h) - gap * (items.length - 1));
+  const total = items.reduce(function (sum, item) {
+    return sum + Math.max(1, item.weight || 0);
+  }, 0);
+  const minShare = Math.min(horizontal ? 72 : 40, avail / items.length);
+  const hasCore = horizontal && items.some(function (item) { return item.key === "core"; });
+  const smallFloor = hasCore ? Math.min(136, Math.max(112, (avail - 180) / Math.max(1, items.length - 1))) : minShare;
+  let sizes;
+  if (hasCore) {
+    const smallCount = items.filter(function (item) { return item.key !== "core"; }).length;
+    const reserved = smallFloor * smallCount;
+    sizes = items.map(function (item) {
+      return item.key === "core" ? Math.max(160, avail - reserved) : smallFloor;
+    });
+  } else {
+    const raw = items.map(function (item) {
+      return Math.max(minShare, avail * (Math.max(1, item.weight || 0) / total));
+    });
+    const rawSum = raw.reduce(function (sum, value) {
+      return sum + value;
+    }, 0);
+    sizes = raw.map(function (value) {
+      return (value * avail) / rawSum;
+    });
+  }
+  let cursor = horizontal ? box.x : box.y;
+  return items.map(function (item, index) {
+    const size = sizes[index];
+    const next = horizontal
+      ? { item: item, box: { x: cursor, y: box.y, w: size, h: box.h } }
+      : { item: item, box: { x: box.x, y: cursor, w: box.w, h: size } };
+    cursor += size + gap;
+    return next;
+  });
+}
+
+function peerCensusPackLabeledBoxes(items, box, gap, labelOf) {
+  if (!items.length) return [];
+  gap = gap || 12;
+  const labeled = items.map(function (item) {
+    const label = labelOf(item);
+    return {
+      item: item,
+      minW: Math.max(36, Math.min(box.w, peerCensusEstimateLabelWidth(label))),
+    };
+  });
+  const rows = [];
+  let row = [];
+  let used = 0;
+  labeled.forEach(function (entry) {
+    const next = row.length ? used + gap + entry.minW : entry.minW;
+    if (row.length && next > box.w + 0.5) {
+      rows.push(row);
+      row = [entry];
+      used = entry.minW;
+    } else {
+      row.push(entry);
+      used = next;
+    }
+  });
+  if (row.length) rows.push(row);
+  const rowGap = 12;
+  const rowH = Math.max(56, (box.h - rowGap * (rows.length - 1)) / rows.length);
+  const packed = [];
+  rows.forEach(function (entries, rowIndex) {
+    const y = box.y + rowIndex * (rowH + rowGap);
+    const mins = entries.map(function (entry) {
+      return entry.minW;
+    });
+    const minSum = mins.reduce(function (sum, value) {
+      return sum + value;
+    }, 0);
+    const extra = Math.max(0, box.w - minSum - gap * Math.max(0, entries.length - 1));
+    const weights = entries.map(function (entry) {
+      return Math.max(1, entry.item.weight || 0);
+    });
+    const weightSum = weights.reduce(function (sum, value) {
+      return sum + value;
+    }, 0);
+    let x = box.x;
+    entries.forEach(function (entry, index) {
+      const width = Math.min(box.w, mins[index] + extra * (weights[index] / weightSum));
+      packed.push({ item: entry.item, box: { x: x, y: y, w: width, h: rowH } });
+      x += width + gap;
+    });
+  });
+  return packed;
+}
+
+function peerCensusVogel(index, count, cx, cy, radius) {
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  const n = Math.max(1, count);
+  const rad = radius * Math.sqrt((index + 0.5) / n);
+  const ang = index * golden;
+  return { x: cx + Math.cos(ang) * rad, y: cy + Math.sin(ang) * rad };
+}
+
+function peerCensusClamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function peerCensusPlaceInCell(nodes, cell) {
+  const padX = 10;
+  const padY = 14;
+  const inner = {
+    x: cell.x + padX,
+    y: cell.y + padY,
+    w: Math.max(10, cell.w - padX * 2),
+    h: Math.max(10, cell.h - padY * 2),
+  };
+  const prefixes = peerCensusGroupBy(nodes, peerCensusPrefixKey);
+  const keys = Object.keys(prefixes).sort();
+  const cx = inner.x + inner.w / 2;
+  const cy = inner.y + inner.h / 2;
+  const radius = Math.min(inner.w, inner.h) * 0.46;
+  const layout = [];
+  keys.forEach(function (key, groupIndex) {
+    const members = prefixes[key];
+    const slot = peerCensusVogel(groupIndex, keys.length, cx, cy, radius);
+    members.forEach(function (node, memberIndex) {
+      const seed = peerCensusHash(peerCensusKey(node));
+      const local =
+        members.length === 1
+          ? { x: 0, y: 0 }
+          : peerCensusVogel(memberIndex, members.length, 0, 0, Math.min(8, 1.6 + members.length * 0.45));
+      const jitterX = (((seed & 255) / 255) - 0.5) * 2.4;
+      const jitterY = ((((seed >>> 8) & 255) / 255) - 0.5) * 2.4;
+      layout.push({
+        key: peerCensusKey(node),
+        node: node,
+        x: peerCensusClamp(slot.x + local.x + jitterX, inner.x + 1, inner.x + inner.w - 1),
+        y: peerCensusClamp(slot.y + local.y + jitterY, inner.y + 1, inner.y + inner.h - 1),
+      });
+    });
+  });
+  return layout;
+}
+
+function layoutPeerCensusNodes(nodes, width, height) {
+  const clusters = [];
+  const layout = [];
+  const list = nodes || [];
+  const padX = 10;
+  const paneGap = 20;
+  const headerH = 22;
+  const legendH = 28;
+  const box = {
+    x: padX,
+    y: headerH,
+    w: Math.max(40, width - padX * 2),
+    h: Math.max(40, height - headerH - legendH),
+  };
+  const blake = list.filter(function (node) {
+    return node.network === "blake2b";
+  });
+  const sha = list.filter(function (node) {
+    return node.network !== "blake2b";
+  });
+  const blakeShare = list.length
+    ? Math.max(0.38, Math.min(0.48, blake.length / list.length + 0.24))
+    : 0.42;
+  const blakeW = Math.round((box.w - paneGap) * blakeShare);
+  const panes = [
+    { network: "blake2b", nodes: blake, box: { x: box.x, y: box.y, w: blakeW, h: box.h } },
+    {
+      network: "sha256",
+      nodes: sha,
+      box: { x: box.x + blakeW + paneGap, y: box.y, w: box.w - blakeW - paneGap, h: box.h },
+    },
+  ];
+  const splitX = box.x + blakeW + paneGap / 2;
+
+  panes.forEach(function (pane) {
+    clusters.push({
+      kind: "network",
+      label: peerCensusNetworkLabel(pane.network),
+      count: pane.nodes.length,
+      x: pane.box.x,
+      y: 4,
+      maxW: pane.box.w,
+    });
+    if (!pane.nodes.length) return;
+    peerCensusPackLabeledBoxes(peerCensusClusterItems(pane.nodes, pane.box), pane.box, 12, peerCensusClusterCaption).forEach(function (packed) {
+      const familyBox = packed.box;
+      clusters.push({
+        kind: "family",
+        label: peerCensusClusterLabel(packed.item),
+        count: peerCensusClusterCount(packed.item),
+        x: familyBox.x,
+        y: familyBox.y + 2,
+        maxW: familyBox.w,
+      });
+      layout.push.apply(
+        layout,
+        peerCensusPlaceInCell(packed.item.nodes, {
+          x: familyBox.x,
+          y: familyBox.y + 20,
+          w: familyBox.w,
+          h: Math.max(16, familyBox.h - 20),
+        })
+      );
+    });
+  });
+
+  return { layout: layout, clusters: clusters, splitX: splitX };
+}
+
+function peerCensusHubPin(edges) {
+  const degree = {};
+  (edges || []).forEach(function (edge) {
+    [edge.a, edge.b].forEach(function (end) {
+      const pin = peerCensusPinKey(end);
+      if (pin !== "|") degree[pin] = (degree[pin] || 0) + 1;
+    });
+  });
+  let hub = "";
+  let best = 0;
+  Object.keys(degree).forEach(function (pin) {
+    if (degree[pin] > best) {
+      hub = pin;
+      best = degree[pin];
+    }
+  });
+  return best >= 8 ? hub : "";
+}
+
+function peerCensusEaseOut(t) {
+  const p = Math.max(0, Math.min(1, t));
+  return 1 - Math.pow(1 - p, 3);
+}
+
+function peerCensusPointMoved(ax, ay, bx, by) {
+  const dx = ax - bx;
+  const dy = ay - by;
+  return dx * dx + dy * dy > 1;
+}
+
+function peerCensusSnapItem(item) {
+  item.x = item.toX;
+  item.y = item.toY;
+  item.fromX = item.toX;
+  item.fromY = item.toY;
+  item.opacity = item.leaving ? 0 : 1;
+  item.born = false;
+}
+
+function tickPeerCensusLayout(now) {
+  if (peerCensusPrefersReducedMotion()) {
+    peerCensusState.layout = peerCensusState.layout.filter(function (item) {
+      if (item.leaving) return false;
+      peerCensusSnapItem(item);
+      return true;
+    });
+    peerCensusState.moving = false;
+    peerCensusState.allowTween = false;
+    return;
+  }
+  if (!peerCensusState.moving) return;
+  let moving = false;
+  const keep = [];
+  peerCensusState.layout.forEach(function (item) {
+    const t = peerCensusEaseOut((now - (item.moveStart || now)) / PEER_CENSUS_MOVE_MS);
+    if (item.leaving) {
+      item.opacity = 1 - t;
+      if (t < 1) {
+        moving = true;
+        keep.push(item);
+      }
+      return;
+    }
+    item.x = item.fromX + (item.toX - item.fromX) * t;
+    item.y = item.fromY + (item.toY - item.fromY) * t;
+    item.opacity = item.born ? t : 1;
+    if (t < 1 && (item.born || peerCensusPointMoved(item.fromX, item.fromY, item.toX, item.toY))) {
+      moving = true;
+    } else {
+      peerCensusSnapItem(item);
+    }
+    keep.push(item);
+  });
+  peerCensusState.layout = keep;
+  peerCensusState.moving = moving;
+  if (!moving) peerCensusState.allowTween = false;
+  if (moving) peerCensusState.edgeCacheKey = "";
+}
+
+function ensurePeerCensusLayout(nodes, width, height) {
+  const data = peerCensusState.data;
+  const key = [
+    Math.round(width),
+    Math.round(height),
+    (nodes || []).length,
+    data && data.updated_at,
+    data && data.fresh_seconds,
+    peerCensusState.cluster || "location",
+  ].join("|");
+  if (key === peerCensusState.layoutKey && !peerCensusState.moving) {
+    return;
+  }
+  if (key === peerCensusState.layoutKey) {
+    tickPeerCensusLayout(peerCensusState.now || performance.now());
+    return;
+  }
+  const next = layoutPeerCensusNodes(nodes, width, height);
+  const hubPin = peerCensusHubPin(data && data.edges);
+  next.layout.forEach(function (item) {
+    item.hub = peerCensusPinKey(item.node) === hubPin;
+  });
+  const now = performance.now();
+  peerCensusState.now = now;
+  const prevByKey = {};
+  peerCensusState.layout.forEach(function (item) {
+    if (!item.leaving) prevByKey[item.key] = item;
+  });
+  const snap = peerCensusPrefersReducedMotion() || !peerCensusState.layout.length || (peerCensusIsLean() && !peerCensusState.allowTween);
+  let moving = false;
+  const incoming = next.layout.map(function (item) {
+    const prev = prevByKey[item.key];
+    if (prev) delete prevByKey[item.key];
+    item.toX = item.x;
+    item.toY = item.y;
+    item.moveStart = now;
+    if (!prev || snap) {
+      item.fromX = item.x;
+      item.fromY = item.y;
+      item.born = !prev && !snap;
+      item.opacity = item.born ? 0 : 1;
+      if (item.born) moving = true;
+      return item;
+    }
+    item.fromX = prev.x;
+    item.fromY = prev.y;
+    item.x = prev.x;
+    item.y = prev.y;
+    item.opacity = prev.opacity == null ? 1 : prev.opacity;
+    item.born = false;
+    if (peerCensusPointMoved(item.fromX, item.fromY, item.toX, item.toY)) moving = true;
+    return item;
+  });
+  if (!snap) {
+    Object.keys(prevByKey).forEach(function (key) {
+      const prev = prevByKey[key];
+      prev.leaving = true;
+      prev.fromX = prev.x;
+      prev.fromY = prev.y;
+      prev.toX = prev.x;
+      prev.toY = prev.y;
+      prev.moveStart = now;
+      incoming.push(prev);
+      moving = true;
+    });
+  }
+  peerCensusState.layoutKey = key;
+  peerCensusState.layout = incoming;
+  peerCensusState.clusters = next.clusters;
+  peerCensusState.splitX = next.splitX;
+  peerCensusState.hubKey = (next.layout.find(function (item) { return item.hub; }) || {}).key || "";
+  peerCensusState.moving = moving;
+  if (moving) peerCensusState.edgeCacheKey = "";
+  tickPeerCensusLayout(now);
+}
+
+function peerCensusSnap(n) {
+  return Math.round(n) + 0.5;
+}
+
+const PEER_CENSUS_COLORS = {
+  "blake2b:ipv4": "#f3c48a",
+  "blake2b:ipv6": "#e09a52",
+  "blake2b:onion": "#8f4318",
+  "sha256:ipv4": "#d7c7a4",
+  "sha256:ipv6": "#9a8460",
+  "sha256:onion": "#6b5736",
+};
+
+function peerCensusNodeColor(node) {
+  const network = node && node.network === "blake2b" ? "blake2b" : "sha256";
+  const type = node && (node.address_type === "ipv6" || node.address_type === "onion") ? node.address_type : "ipv4";
+  return PEER_CENSUS_COLORS[network + ":" + type];
+}
+
+function peerCensusPrefersReducedMotion() {
+  if (!window.matchMedia) return false;
+  if (!peerCensusState.motionMq) {
+    peerCensusState.motionMq = window.matchMedia("(prefers-reduced-motion: reduce)");
+  }
+  return peerCensusState.motionMq.matches;
+}
+
+function peerCensusIsLean() {
+  if (peerCensusPrefersReducedMotion()) return true;
+  if (!window.matchMedia) return false;
+  if (!peerCensusState.leanMq) {
+    peerCensusState.leanMq = window.matchMedia("(max-width: 720px), (pointer: coarse)");
+  }
+  return peerCensusState.leanMq.matches;
+}
+
+function peerCensusDpr() {
+  const dpr = window.devicePixelRatio || 1;
+  return peerCensusIsLean() ? Math.min(dpr, 1.25) : dpr;
+}
+
+function peerCensusMarkColor(item, selected) {
+  if (selected || item.key === peerCensusState.hoverKey) return "#ffffff";
+  return peerCensusNodeColor(item.node);
+}
+
+function peerCensusLabelStyle(kind) {
+  if (kind === "network") {
+    return { font: "700 11px ui-sans-serif, system-ui, sans-serif", fill: "#f0d2b0", padX: 6, padY: 3, h: 16 };
+  }
+  if (kind === "family") {
+        return { font: "600 10px ui-sans-serif, system-ui, sans-serif", fill: "#efe4d6", padX: 5, padY: 2, h: 15 };
+  }
+  return { font: "600 9px ui-sans-serif, system-ui, sans-serif", fill: "#d8c4ae", padX: 5, padY: 2, h: 14 };
+}
+
+function peerCensusBoxesOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function paintPeerCensusClusters(ctx, width, height) {
+  ctx.save();
+  ctx.textBaseline = "top";
+  ctx.textAlign = "left";
+  const placed = [];
+  const order = { network: 0, family: 1, asn: 2 };
+  const labels = (peerCensusState.clusters || []).slice().sort(function (a, b) {
+    return (order[a.kind] || 9) - (order[b.kind] || 9);
+  });
+  labels.forEach(function (item) {
+    const style = peerCensusLabelStyle(item.kind);
+    ctx.font = style.font;
+    const text = item.label;
+    const countText = item.count != null ? " " + formatNumber(item.count) : "";
+    const nameW = ctx.measureText(text).width;
+    const countW = countText ? ctx.measureText(countText).width : 0;
+    const box = {
+      x: item.x,
+      y: item.y,
+      w: nameW + countW + style.padX * 2,
+      h: style.h,
+    };
+    if (box.x + box.w > width - 4) box.x = Math.max(4, width - 4 - box.w);
+    let attempts = 0;
+    while (attempts < 4 && placed.some(function (prev) { return peerCensusBoxesOverlap(prev, box); })) {
+      box.y += style.h + 1;
+      attempts += 1;
+    }
+    if (item.kind !== "family" && placed.some(function (prev) { return peerCensusBoxesOverlap(prev, box); })) return;
+    placed.push(box);
+    ctx.globalAlpha = 0.88;
+    ctx.fillStyle = "#110f0d";
+    ctx.fillRect(box.x, box.y, box.w, box.h);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = item.kind === "network" ? (item.label === "BLAKE2b" ? "#e09a52" : "#e2c08a") : style.fill;
+    ctx.fillText(text, box.x + style.padX, box.y + style.padY);
+    if (countText) {
+      ctx.fillStyle = item.kind === "network" ? "#c4a07a" : "#b9a790";
+      ctx.fillText(countText, box.x + style.padX + nameW, box.y + style.padY);
+    }
+  });
+  ctx.restore();
+}
+
+function peerCensusEdgeGradient(ctx, x0, y0, x1, y1) {
+  const g = ctx.createLinearGradient(x0, y0, x1, y1);
+  g.addColorStop(0, "#c46a2e");
+  g.addColorStop(0.16, "#cc7838");
+  g.addColorStop(0.34, "#d4894a");
+  g.addColorStop(0.52, "#dc964e");
+  g.addColorStop(0.68, "#e09a52");
+  g.addColorStop(0.84, "#e4a86a");
+  g.addColorStop(1, "#e8b070");
+  return g;
+}
+
+function paintPeerCensusEdges(ctx) {
+  const edges = (peerCensusState.data && peerCensusState.data.edges) || [];
+  if (!edges.length) return;
+  const byKey = {};
+  const byPin = {};
+  peerCensusState.layout.forEach(function (item) {
+    byKey[item.key] = item;
+    byPin[peerCensusPinKey(item.node)] = item;
+  });
+  const lookup = function (end) {
+    const node = end || {};
+    return byKey[peerCensusKey(node)] || byPin[peerCensusPinKey(node)] || null;
+  };
+  const focus = peerCensusState.hoverKey || peerCensusState.selectedKey;
+  ctx.lineCap = "butt";
+  ctx.lineJoin = "miter";
+  edges.forEach(function (edge) {
+    const left = lookup(edge.a || edge.source || edge.from);
+    const right = lookup(edge.b || edge.target || edge.to);
+    if (!left || !right) return;
+    const active = focus && (left.key === focus || right.key === focus);
+    const x0 = peerCensusSnap(left.x);
+    const y0 = peerCensusSnap(left.y);
+    const x1 = peerCensusSnap(right.x);
+    const y1 = peerCensusSnap(right.y);
+    ctx.globalAlpha = active ? 0.92 : 0.2;
+    ctx.strokeStyle = active ? "#ffffff" : (peerCensusIsLean() ? "#d4894a" : peerCensusEdgeGradient(ctx, x0, y0, x1, y1));
+    ctx.lineWidth = active ? 1.2 : 0.7;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.stroke();
+  });
+  ctx.globalAlpha = 1;
+}
+
+function paintPeerCensusEdgesCached(ctx, width, height, dpr) {
+  if (peerCensusState.moving) {
+    paintPeerCensusEdges(ctx);
+    return;
+  }
+  const key = [
+    width,
+    height,
+    peerCensusState.layoutKey,
+    peerCensusState.hoverKey,
+    peerCensusState.selectedKey,
+    ((peerCensusState.data && peerCensusState.data.edges) || []).length,
+  ].join("|");
+  if (!peerCensusState.edgeLayer) peerCensusState.edgeLayer = document.createElement("canvas");
+  const layer = peerCensusState.edgeLayer;
+  const nextW = Math.round(width * dpr);
+  const nextH = Math.round(height * dpr);
+  if (peerCensusState.edgeCacheKey !== key || layer.width !== nextW || layer.height !== nextH) {
+    layer.width = nextW;
+    layer.height = nextH;
+    const layerCtx = layer.getContext("2d");
+    layerCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    layerCtx.clearRect(0, 0, width, height);
+    paintPeerCensusEdges(layerCtx);
+    peerCensusState.edgeCacheKey = key;
+  }
+  ctx.drawImage(layer, 0, 0, width, height);
+}
+
+function drawPeerCensusMark(ctx, item, selected) {
+  const type = item.node.address_type;
+  const x = peerCensusSnap(item.x);
+  const y = peerCensusSnap(item.y);
+  const focused = selected || item.key === peerCensusState.hoverKey;
+  const scale = item.node && item.node.network === "blake2b" ? 1 : 0.62;
+  const paint = peerCensusMarkColor(item, selected);
+  ctx.globalAlpha = item.opacity == null ? 1 : item.opacity;
+  ctx.strokeStyle = paint;
+  ctx.fillStyle = paint;
+  ctx.lineWidth = scale < 1 ? 1 : 1.2;
+  ctx.lineJoin = "miter";
+  ctx.lineCap = "butt";
+  ctx.beginPath();
+  if (type === "ipv6") {
+    const s = (focused || item.hub ? 4.5 : 3.5) * scale;
+    ctx.strokeRect(x - s, y - s, s * 2, s * 2);
+  } else if (type === "onion") {
+    const s = (focused || item.hub ? 5 : 4) * scale;
+    ctx.moveTo(x, y - s);
+    ctx.lineTo(x + s, y + s);
+    ctx.lineTo(x - s, y + s);
+    ctx.closePath();
+    ctx.fill();
+  } else {
+    ctx.arc(x, y, (focused || item.hub ? 2.8 : 2.1) * scale, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (item.hub) {
+    ctx.beginPath();
+    ctx.strokeStyle = focused ? "#ffffff" : "#f3c48a";
+    ctx.lineWidth = 1.2;
+    ctx.arc(x, y, 7, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function startPeerCensusAnim() {
+  if (peerCensusState.raf || !peerCensusState.open) return;
+  if (peerCensusPrefersReducedMotion() || document.hidden || !peerCensusState.moving) {
+    return;
+  }
+  const tick = function (ts) {
+    if (!peerCensusState.open || document.hidden || peerCensusPrefersReducedMotion() || !peerCensusState.moving) {
+      peerCensusState.raf = 0;
+      paintPeerCensusMap();
+      return;
+    }
+    peerCensusState.now = ts;
+    paintPeerCensusMap();
+    peerCensusState.raf = requestAnimationFrame(tick);
+  };
+  peerCensusState.raf = requestAnimationFrame(tick);
+}
+
+function stopPeerCensusAnim() {
+  if (peerCensusState.raf) cancelAnimationFrame(peerCensusState.raf);
+  peerCensusState.raf = 0;
+}
+
+function paintPeerCensusMap() {
+  const canvas = document.getElementById("peerCensusCanvas");
+  const wrap = document.getElementById("peerCensusMap");
+  if (!canvas || !wrap || wrap.clientWidth < 8) return;
+  const dpr = peerCensusDpr();
+  const width = wrap.clientWidth;
+  const height = wrap.clientHeight;
+  const nextW = Math.round(width * dpr);
+  const nextH = Math.round(height * dpr);
+  const ctx = canvas.getContext("2d");
+  if (canvas.width !== nextW || canvas.height !== nextH) {
+    canvas.width = nextW;
+    canvas.height = nextH;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  ctx.imageSmoothingEnabled = true;
+  ctx.clearRect(0, 0, width, height);
+  const data = peerCensusState.data;
+  const nodes = (data && data.nodes) || [];
+  peerCensusState.size = { w: width, h: height };
+  if (!peerCensusState.now) peerCensusState.now = performance.now();
+  ensurePeerCensusLayout(nodes, width, height);
+  paintPeerCensusEdgesCached(ctx, width, height, dpr);
+
+  const hoverKey = peerCensusState.hoverKey;
+  const selectedKey = peerCensusState.selectedKey;
+  peerCensusState.layout.forEach(function (item) {
+    if (item.key === hoverKey || item.key === selectedKey) return;
+    drawPeerCensusMark(ctx, item, false);
+  });
+  peerCensusState.layout.forEach(function (item) {
+    if (item.key !== hoverKey && item.key !== selectedKey) return;
+    drawPeerCensusMark(ctx, item, item.key === selectedKey);
+  });
+  paintPeerCensusClusters(ctx, width, height);
+  const hub = peerCensusState.layout.find(function (item) {
+    return item.hub;
+  });
+  if (hub && hub.key !== hoverKey && hub.key !== selectedKey) {
+    drawPeerCensusMark(ctx, hub, false);
+    ctx.save();
+    ctx.font = "700 10px ui-sans-serif, system-ui, sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    const tag = "This host";
+    const tw = ctx.measureText(tag).width;
+    const tx = Math.min(hub.x + 10, width - tw - 16);
+    const ty = Math.max(6, hub.y - 18);
+    ctx.fillStyle = "#110f0d";
+    ctx.fillRect(tx - 5, ty - 2, tw + 10, 16);
+    ctx.fillStyle = "#f0d2b0";
+    ctx.fillText(tag, tx, ty);
+    ctx.restore();
+  }
+
+  const focus = peerCensusState.layout.find(function (item) {
+    return item.key === hoverKey || item.key === selectedKey;
+  });
+  if (focus) {
+    const host = peerCensusFormatHost(focus.node);
+    const cluster = (focus.hub ? "This host · " : "") + peerCensusNodeLabel(focus.node);
+    ctx.font = "700 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    const hostW = ctx.measureText(host).width;
+    ctx.font = "600 10px ui-sans-serif, system-ui, sans-serif";
+    const clusterW = ctx.measureText(cluster).width;
+    const pad = 7;
+    const tw = Math.min(Math.max(hostW, clusterW), width - 28);
+    const boxH = 34;
+    let tx = Math.min(Math.max(focus.x, 14 + tw / 2), width - 14 - tw / 2);
+    let ty = focus.y - 24;
+    if (ty < 36) ty = focus.y + 28;
+    ctx.fillStyle = "#110f0d";
+    ctx.fillRect(tx - tw / 2 - pad, ty - 13, tw + pad * 2, boxH);
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "center";
+    ctx.font = "700 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    ctx.fillText(host, tx, ty + 1, width - 28);
+    ctx.fillStyle = "#f0d2b0";
+    ctx.font = "600 10px ui-sans-serif, system-ui, sans-serif";
+    ctx.fillText(cluster, tx, ty + 15, width - 28);
+  }
+}
+
+function peerCensusHit(x, y) {
+  let best = null;
+  let bestDist = 16;
+  peerCensusState.layout.forEach(function (item) {
+    if (item.leaving) return;
+    const dx = item.x - x;
+    const dy = item.y - y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const limit = item.hub ? 22 : 14;
+    if (dist <= limit && dist <= bestDist) {
+      best = item;
+      bestDist = dist;
+    }
+  });
+  return best;
+}
+
+function peerCensusCanvasPoint(event) {
+  const canvas = event.currentTarget;
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: ((event.clientX - rect.left) / rect.width) * (peerCensusState.size.w || rect.width),
+    y: ((event.clientY - rect.top) / rect.height) * (peerCensusState.size.h || rect.height),
+  };
+}
+
+function onPeerCensusMove(event) {
+  const point = peerCensusCanvasPoint(event);
+  const hit = peerCensusHit(point.x, point.y);
+  const next = hit ? hit.key : "";
+  if (next === peerCensusState.hoverKey) return;
+  peerCensusState.hoverKey = next;
+  paintPeerCensusMap();
+}
+
+function onPeerCensusLeave() {
+  if (!peerCensusState.hoverKey) return;
+  peerCensusState.hoverKey = "";
+  paintPeerCensusMap();
+}
+
+function onPeerCensusClick(event) {
+  const point = peerCensusCanvasPoint(event);
+  const hit = peerCensusHit(point.x, point.y);
+  selectPeerCensusNode(hit ? hit.key : "");
+}
+
+function applyPeerCensusPayload(payload, statusText) {
+  peerCensusState.data = payload || null;
+  const summary = (payload && payload.summary) || {};
+  const crawl = (payload && payload.crawl) || {};
+  const badge = document.getElementById("peerCensusBadge");
+  const progress = document.getElementById("peerCensusProgress");
+  const status = document.getElementById("peerCensusStatus");
+  if (badge) {
+    badge.textContent = peerCensusBadgeText(crawl, summary);
+    badge.classList.toggle("is-live", String(crawl.state || "").toLowerCase() === "updating");
+  }
+  if (progress) {
+    const line = peerCensusProgressText(crawl, payload && payload.updated_at);
+    progress.hidden = !line;
+    progress.textContent = line;
+  }
+  if (payload && payload.ready !== false) mergeMetricPoint("census", censusMetricPoint(payload));
+  renderPeerCensusCounts(summary);
+  const selected = ((payload && payload.nodes) || []).find(function (node) {
+    return peerCensusKey(node) === peerCensusState.selectedKey;
+  });
+  if (!selected) peerCensusState.selectedKey = "";
+  renderPeerCensusDetail(selected || null);
+  renderPeerCensusPeers((payload && payload.nodes) || []);
+  syncPeerCensusPeerRows();
+  paintPeerCensusMap();
+  startPeerCensusAnim();
+  if (status) status.textContent = statusText || "";
+}
+
+function renderPeerCensusPeers(nodes) {
+  const host = document.getElementById("peerCensusPeers");
+  const body = document.getElementById("peerCensusPeersBody");
+  const copyAll = document.getElementById("peerCensusPeersCopyAll");
+  if (!host || !body) return;
+  const peers = reliableBlake2bPeers(nodes);
+  host.hidden = !peers.length;
+  if (copyAll) {
+    copyAll.hidden = !peers.length;
+    copyAll.dataset.lines = peers.map(peerCensusAddNodeLine).join("\n");
+  }
+  const hubPin = peerCensusHubPin((peerCensusState.data && peerCensusState.data.edges) || []);
+  withOverflowScroll(host, function () {
+  body.innerHTML = peers
+    .map(function (node) {
+      const line = peerCensusAddNodeLine(node);
+      const hub = hubPin && peerCensusPinKey(node) === hubPin;
+      return (
+        "<tr data-peer-key=\"" +
+        escapeHtml(peerCensusKey(node)) +
+        "\">" +
+        "<td><span class=\"peer-census-detail-host\">" +
+        escapeHtml(peerCensusFormatHost(node)) +
+        "</span>" +
+        (hub ? " <span class=\"peer-census-peers-hub\">This host</span>" : "") +
+        "</td>" +
+        "<td>" +
+        escapeHtml(peerCensusAddressLabel(node.address_type)) +
+        "</td>" +
+        "<td>" +
+        escapeHtml(node.start_height == null ? "—" : formatNumber(node.start_height)) +
+        "</td>" +
+        "<td><button type=\"button\" class=\"datum-pool-copy peer-census-peers-copy\" data-copy=\"" +
+        escapeHtml(line).replace(/"/g, "&quot;") +
+        "\" title=\"Copy bitcoin.conf line\" aria-label=\"Copy " +
+        escapeHtml(line).replace(/"/g, "&quot;") +
+        "\"><span class=\"datum-pool-copy__value\">" +
+        escapeHtml(line) +
+        "</span></button></td>" +
+        "</tr>"
+      );
+    })
+    .join("");
+  });
+}
+
+function stopPeerCensusPolling() {
+  if (peerCensusState.timer) {
+    clearInterval(peerCensusState.timer);
+    peerCensusState.timer = 0;
+  }
+  if (peerCensusState.retryTimer) {
+    clearTimeout(peerCensusState.retryTimer);
+    peerCensusState.retryTimer = 0;
+  }
+}
+
+async function fetchPeerCensusPayload() {
+  const response = await fetch("/api/blockvase/p2p-nodes", { credentials: "include", cache: "no-store" });
+  let body = null;
+  try {
+    body = await response.json();
+  } catch (_) {
+    body = {};
+  }
+  return { status: response.status, body: body || {} };
+}
+
+async function refreshPeerCensus(isRetry) {
+  if (!peerCensusState.open || peerCensusState.loading) return;
+  peerCensusState.loading = true;
+  const status = document.getElementById("peerCensusStatus");
+  if (status && !peerCensusState.data) status.textContent = "Loading listening peers…";
+  try {
+    const result = await fetchPeerCensusPayload();
+    if (result.status === 503) {
+      applyPeerCensusPayload(peerCensusState.data, result.body.message || "Census snapshot is not ready yet.");
+      schedulePeerCensusRetry();
+      return;
+    }
+    if (result.status !== 200 || !result.body.ready) {
+      applyPeerCensusPayload(peerCensusState.data, result.body.error || result.body.message || "Census snapshot is unavailable.");
+      schedulePeerCensusRetry();
+      return;
+    }
+    applyPeerCensusPayload(result.body, result.body.warning || "");
+    startPeerCensusPolling();
+  } catch (error) {
+    applyPeerCensusPayload(peerCensusState.data, error.message || "Census snapshot is unavailable.");
+    schedulePeerCensusRetry();
+  } finally {
+    peerCensusState.loading = false;
+  }
+}
+
+function startPeerCensusPolling() {
+  if (peerCensusState.timer) return;
+  peerCensusState.timer = setInterval(function () {
+    refreshPeerCensus(false);
+  }, PEER_CENSUS_POLL_MS);
+}
+
+function schedulePeerCensusRetry() {
+  if (peerCensusState.retryTimer || !peerCensusState.open) return;
+  peerCensusState.retryTimer = setTimeout(function () {
+    peerCensusState.retryTimer = 0;
+    refreshPeerCensus(true);
+  }, PEER_CENSUS_RETRY_MS);
+}
+
+function openPeerCensusPanel() {
+  const panel = document.getElementById("peerCensusPanel");
+  if (!panel) return;
+  peerCensusState.open = true;
+  panel.hidden = false;
+  panel.setAttribute("aria-hidden", "false");
+  syncPeerCensusOpenButton();
+  if (!peerCensusState.data) renderPeerCensusCounts({});
+  paintPeerCensusMap();
+  startPeerCensusAnim();
+  refreshPeerCensus(false);
+}
+
+function closePeerCensusPanel() {
+  const panel = document.getElementById("peerCensusPanel");
+  peerCensusState.open = false;
+  stopPeerCensusAnim();
+  stopPeerCensusPolling();
+  if (panel) {
+    panel.hidden = true;
+    panel.setAttribute("aria-hidden", "true");
+  }
+  syncPeerCensusOpenButton();
+}
+
+function syncPeerCensusClusterToggle() {
+  const mode = peerCensusState.cluster === "family" ? "family" : "location";
+  [].forEach.call(document.querySelectorAll("[data-peer-cluster]"), function (btn) {
+    const active = btn.getAttribute("data-peer-cluster") === mode;
+    btn.classList.toggle("is-active", active);
+    btn.setAttribute("aria-selected", active ? "true" : "false");
+  });
+}
+
+function setPeerCensusCluster(mode) {
+  const next = mode === "family" ? "family" : "location";
+  if (peerCensusState.cluster === next) return;
+  peerCensusState.cluster = next;
+  peerCensusState.layoutKey = "";
+  peerCensusState.allowTween = true;
+  syncPeerCensusClusterToggle();
+  if (peerCensusState.open) {
+    paintPeerCensusMap();
+    startPeerCensusAnim();
+  }
+}
+
+function initPeerCensusPanel() {
+  renderPeerCensusCounts({});
+  syncPeerCensusClusterToggle();
+  const closeBtn = document.getElementById("peerCensusClose");
+  const canvas = document.getElementById("peerCensusCanvas");
+  const map = document.getElementById("peerCensusMap");
+  if (closeBtn) closeBtn.addEventListener("click", closePeerCensusPanel);
+  const clusterToggle = document.querySelector(".peer-census-cluster-toggle");
+  if (clusterToggle) {
+    clusterToggle.addEventListener("click", function (event) {
+      const btn = event.target.closest("[data-peer-cluster]");
+      if (!btn || !clusterToggle.contains(btn)) return;
+      setPeerCensusCluster(btn.getAttribute("data-peer-cluster"));
+    });
+  }
+  if (canvas) {
+    canvas.addEventListener("mousemove", onPeerCensusMove);
+    canvas.addEventListener("mouseleave", onPeerCensusLeave);
+    canvas.addEventListener("click", onPeerCensusClick);
+  }
+  if (map && typeof ResizeObserver === "function") {
+    let resizeTimer = 0;
+    const observer = new ResizeObserver(function () {
+      if (!peerCensusState.open) return;
+      if (!peerCensusIsLean()) {
+        paintPeerCensusMap();
+        return;
+      }
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(function () {
+        resizeTimer = 0;
+        paintPeerCensusMap();
+      }, 80);
+    });
+    observer.observe(map);
+  }
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) stopPeerCensusAnim();
+    else if (peerCensusState.open) {
+      paintPeerCensusMap();
+      startPeerCensusAnim();
+    }
+  });
+  const peers = document.getElementById("peerCensusPeers");
+  if (peers) {
+    peers.addEventListener("click", function (event) {
+      const copy = event.target.closest(".peer-census-peers-copy, .peer-census-peers-copyall");
+      if (copy) {
+        event.preventDefault();
+        event.stopPropagation();
+        const text = copy.getAttribute("data-copy") || copy.dataset.copy || copy.dataset.lines || "";
+        const value = copy.querySelector(".datum-pool-copy__value") || copy;
+        const prev = value.textContent;
+        copyTextToClipboard(text, copy).then(function (ok) {
+          if (!ok) return;
+          copy.classList.add("is-copied");
+          value.textContent = "Copied";
+          window.setTimeout(function () {
+            copy.classList.remove("is-copied");
+            value.textContent = prev;
+          }, 1200);
+        });
+        return;
+      }
+      const row = event.target.closest("tr[data-peer-key]");
+      if (!row) return;
+      selectPeerCensusNode(row.getAttribute("data-peer-key"), true);
+    });
+  }
+}
+
 function resetViewerToLiveMempool() {
   cancelPortalMempoolSearch();
   const input = document.getElementById("mempoolTxSearchInput");
@@ -3741,6 +5346,7 @@ function resetViewerToLiveMempool() {
     postToMempoolIframe({ type: "blockvase-resume-mempool", selectTxid: "" });
   }
   window.scrollTo(0, 0);
+  closePeerCensusPanel();
 }
 
 function setViewerTxidInLocation(txid) {
@@ -7028,6 +8634,28 @@ function txFlowWireColor(el, txNode) {
   return (el && el.dataset.color) || txFlowFallbackColor();
 }
 
+function txFlowCopperGradient(id) {
+  return (
+    '<linearGradient id="' +
+    id +
+    '" x1="0" y1="1" x2="1" y2="0">' +
+    '<stop offset="0%" stop-color="#c46a2e"/>' +
+    '<stop offset="16%" stop-color="#cc7838"/>' +
+    '<stop offset="34%" stop-color="#d4894a"/>' +
+    '<stop offset="52%" stop-color="#dc964e"/>' +
+    '<stop offset="68%" stop-color="#e09a52"/>' +
+    '<stop offset="84%" stop-color="#e4a86a"/>' +
+    '<stop offset="100%" stop-color="#e8b070"/>' +
+    "</linearGradient>"
+  );
+}
+
+function txFlowWireStrokeAttrs(color, gradientId) {
+  const value = String(color || "").toLowerCase();
+  if (value === "#ffffff" || value === "white") return 'stroke="#ffffff" style="stroke:#ffffff"';
+  return 'stroke="url(#' + gradientId + ')" style="stroke:url(#' + gradientId + ')"';
+}
+
 function drawTxFlowWires(root) {
   const board = root.querySelector(".tx-flow-board");
   const svg = root.querySelector(".tx-flow-wires");
@@ -7041,26 +8669,29 @@ function drawTxFlowWires(root) {
   const mid = txFlowRelRect(board, txNode);
   const ins = root.querySelectorAll('[data-side="in"] .tx-flow-node');
   const outs = root.querySelectorAll('[data-side="out"] .tx-flow-node');
-  let paths = "";
+  const gradientId = "txFlowCopperWire";
+  let paths = "<defs>" + txFlowCopperGradient(gradientId) + "</defs>";
   ins.forEach(function (el) {
     const a = txFlowRelRect(board, el);
+    const strokeAttrs = txFlowWireStrokeAttrs(txFlowWireColor(el, txNode), gradientId);
     paths +=
       '<path d="' +
       txFlowCurve(a.x + a.w, a.y + a.h / 2, mid.x, mid.y + mid.h / 2) +
-      '" fill="none" stroke="' +
-      txFlowWireColor(el, txNode) +
-      '" stroke-width="' +
+      '" fill="none" ' +
+      strokeAttrs +
+      ' stroke-width="' +
       (el.dataset.stroke || "1.25") +
       '" stroke-linecap="round" opacity="0.82"></path>';
   });
   outs.forEach(function (el) {
     const a = txFlowRelRect(board, el);
+    const strokeAttrs = txFlowWireStrokeAttrs(txFlowWireColor(el, txNode), gradientId);
     paths +=
       '<path d="' +
       txFlowCurve(mid.x + mid.w, mid.y + mid.h / 2, a.x, a.y + a.h / 2) +
-      '" fill="none" stroke="' +
-      txFlowWireColor(el, txNode) +
-      '" stroke-width="' +
+      '" fill="none" ' +
+      strokeAttrs +
+      ' stroke-width="' +
       (el.dataset.stroke || "1.25") +
       '" stroke-linecap="round" opacity="0.82"></path>';
   });
@@ -8408,6 +10039,8 @@ async function init() {
   initPortalMempoolSearch();
   initPortalSelectionGuard();
   initBlockCarousel();
+  initViewerPeerCopy();
+  initPeerCensusPanel();
   initPoolShareChart();
   initDatumPoolBoard();
   initLightningBoard();

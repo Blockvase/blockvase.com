@@ -190,7 +190,7 @@ function mempoolColorPalette() {
 }
 
 function mempoolHighlightColor() {
-  return "#e4b07a";
+  return "#ffffff";
 }
 
 function mixHex(a, b, t) {
@@ -212,6 +212,7 @@ function mixHex(a, b, t) {
 }
 
 function mempoolTileFill(ctx, color, rect) {
+  if (String(color || "").toLowerCase() === "#ffffff") return "#ffffff";
   const g = ctx.createLinearGradient(rect.x, rect.y + rect.height, rect.x + rect.width, rect.y);
   g.addColorStop(0, mixHex(color, "#5c2a14", 0.12));
   g.addColorStop(0.38, color);
@@ -359,6 +360,22 @@ function metricEscape(s) {
     .replace(/"/g, "&quot;");
 }
 
+function copperSvgGradient(id) {
+  return (
+    '<linearGradient id="' +
+    id +
+    '" x1="0" y1="1" x2="1" y2="0">' +
+    '<stop offset="0%" stop-color="#c46a2e"/>' +
+    '<stop offset="16%" stop-color="#cc7838"/>' +
+    '<stop offset="34%" stop-color="#d4894a"/>' +
+    '<stop offset="52%" stop-color="#dc964e"/>' +
+    '<stop offset="68%" stop-color="#e09a52"/>' +
+    '<stop offset="84%" stop-color="#e4a86a"/>' +
+    '<stop offset="100%" stop-color="#e8b070"/>' +
+    "</linearGradient>"
+  );
+}
+
 function radialRingSvg(percent, opts) {
   opts = opts || {};
   const size = opts.size || 56;
@@ -366,6 +383,7 @@ function radialRingSvg(percent, opts) {
   const r = (size - stroke) / 2;
   const cx = size / 2;
   const c = 2 * Math.PI * r;
+  const gid = "radialCopper-" + size + "-" + stroke + "-" + Math.round(Number(percent) || 0);
   let fill = "";
   if (percent != null && Number.isFinite(Number(percent))) {
     const pct = Math.min(100, Math.max(0, Number(percent)));
@@ -380,7 +398,11 @@ function radialRingSvg(percent, opts) {
       cx +
       '" r="' +
       r +
-      '" fill="none" stroke-width="' +
+      '" fill="none" stroke="url(#' +
+      gid +
+      ')" style="stroke:url(#' +
+      gid +
+      ')" stroke-width="' +
       stroke +
       '" stroke-dasharray="' +
       c.toFixed(2) +
@@ -401,7 +423,9 @@ function radialRingSvg(percent, opts) {
     size +
     " " +
     size +
-    '" aria-hidden="true"><circle class="radial-ring-track" cx="' +
+    '" aria-hidden="true"><defs>' +
+    copperSvgGradient(gid) +
+    '</defs><circle class="radial-ring-track" cx="' +
     cx +
     '" cy="' +
     cx +
@@ -1371,9 +1395,17 @@ class CanvasMempoolScene {
       }
       block.current = state.rect;
       if (state.animating) needsNext = true;
-      const color = this.isHighlightedTxid(txid) ? mempoolHighlightColor() : state.color;
+      const highlighted = this.isHighlightedTxid(txid);
+      const color = highlighted ? mempoolHighlightColor() : state.color;
       ctx.globalAlpha = state.opacity;
       ctx.fillStyle = mempoolTileFill(ctx, color, state.rect);
+      if (highlighted) {
+        ctx.shadowColor = "rgba(255, 255, 255, 0.55)";
+        ctx.shadowBlur = 16;
+      } else {
+        ctx.shadowColor = "transparent";
+        ctx.shadowBlur = 0;
+      }
       const bleed = state.rect.width > 1 && state.rect.height > 1 ? 0.75 : 0;
       ctx.fillRect(
         Math.max(0, state.rect.x - bleed),
@@ -1381,6 +1413,8 @@ class CanvasMempoolScene {
         Math.min(this.width, state.rect.width + bleed * 2),
         Math.min(this.height, state.rect.height + bleed * 2)
       );
+      ctx.shadowColor = "transparent";
+      ctx.shadowBlur = 0;
     }
     ctx.globalAlpha = 1;
     if (this.paused && !this.hoverTxid && !this.selectedTxid && !needsNext) return;

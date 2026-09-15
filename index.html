@@ -24,7 +24,7 @@
     <meta name="twitter:image" content="https://blockvase.com/media/x-preview.png?v=8" />
     <meta name="twitter:image:alt" content="Blockvase" />
     <link rel="icon" href="/media/logo_64.png" type="image/png" />
-    <link rel="stylesheet" href="/static/style.css?v=346" />
+    <link rel="stylesheet" href="/static/style.css?v=351" />
     <script type="module" src="/static/vendor/model-viewer.min.js?v=2"></script>
   </head>
   <body class="portal-page" data-theme="default">
@@ -57,6 +57,58 @@
           <p class="metric-board-asof viewer-tab-asof" id="viewerTabAsOf" hidden></p>
           <section class="block-carousel metric-board metric-board--dense" id="blockCarousel" aria-label="Recent blocks">
             <div id="metricsGrid"><div class="loading pulse">Loading data...</div></div>
+            <section id="peerCensusPanel" class="peer-census-panel" hidden aria-hidden="true">
+              <div class="peer-census-head">
+                <p class="peer-census-badge" id="peerCensusBadge">Waiting for census</p>
+                <button type="button" class="btn-icon peer-census-close" id="peerCensusClose" aria-label="Close listening peer map">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                </button>
+              </div>
+              <div id="peerCensusCounts"></div>
+              <p class="peer-census-progress" id="peerCensusProgress" hidden></p>
+              <div class="peer-census-map-block">
+                <div class="peer-census-map-toolbar">
+                  <div class="peer-census-cluster-toggle pool-share-toggle" role="tablist" aria-label="Peer map grouping">
+                    <button type="button" class="pool-share-toggle__btn is-active" role="tab" data-peer-cluster="location" aria-selected="true">Location</button>
+                    <button type="button" class="pool-share-toggle__btn" role="tab" data-peer-cluster="family" aria-selected="false">Software</button>
+                  </div>
+                </div>
+              <div class="peer-census-map" id="peerCensusMap">
+                <canvas id="peerCensusCanvas" aria-label="Listening peer map"></canvas>
+                <ul class="peer-census-legend" aria-label="Map legend">
+                  <li><svg class="peer-census-mark" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="2.2" fill="#f3c48a"></circle></svg>BLAKE2b IPv4</li>
+                  <li><svg class="peer-census-mark" viewBox="0 0 12 12" aria-hidden="true"><rect x="2.5" y="2.5" width="7" height="7" fill="none" stroke="#e09a52" stroke-width="1.2"></rect></svg>BLAKE2b IPv6</li>
+                  <li><svg class="peer-census-mark" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5 L11 10.5 L1 10.5 Z" fill="#8f4318"></path></svg>BLAKE2b Onion</li>
+                  <li><svg class="peer-census-mark" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="2.2" fill="#d7c7a4"></circle></svg>SHA-256 IPv4</li>
+                  <li><svg class="peer-census-mark" viewBox="0 0 12 12" aria-hidden="true"><rect x="2.5" y="2.5" width="7" height="7" fill="none" stroke="#9a8460" stroke-width="1.2"></rect></svg>SHA-256 IPv6</li>
+                  <li><svg class="peer-census-mark" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5 L11 10.5 L1 10.5 Z" fill="#6b5736"></path></svg>SHA-256 Onion</li>
+                  <li>Line = handshake from this host</li>
+                </ul>
+              </div>
+              </div>
+              <aside class="peer-census-detail" id="peerCensusDetail" hidden></aside>
+              <section class="peer-census-peers" id="peerCensusPeers" hidden>
+                <div class="peer-census-peers-head">
+                  <h3 class="peer-census-peers-title">Reliable BLAKE2b peers</h3>
+                  <button type="button" class="peer-census-peers-copyall" id="peerCensusPeersCopyAll" hidden>Copy all</button>
+                </div>
+                <p class="peer-census-peers-note">Listeners this census reached recently that are near tip. Paste into <code>bitcoin.conf</code>.</p>
+                <div class="peer-census-peers-wrap">
+                  <table class="peer-census-peers-table">
+                    <thead>
+                      <tr>
+                        <th>Peer</th>
+                        <th>Type</th>
+                        <th>Height</th>
+                        <th>bitcoin.conf</th>
+                      </tr>
+                    </thead>
+                    <tbody id="peerCensusPeersBody"></tbody>
+                  </table>
+                </div>
+              </section>
+              <p class="peer-census-status" id="peerCensusStatus" aria-live="polite"></p>
+            </section>
             <div id="blockCarouselRetarget" class="block-carousel-retarget"></div>
             <div class="block-carousel__track" id="blockCarouselTrack" role="list"></div>
             <div id="blockCarouselShare" class="block-carousel-share"></div>
@@ -79,7 +131,7 @@
               <button type="button" class="btn-icon display-open-full" id="displayOpenFull" aria-label="Open mempool in new tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></button>
             </form>
             <div class="display-iframe-wrapper" id="displayIframeWrapper">
-              <iframe class="display-iframe" id="displayIframe" data-src="/mempool?embed=1&v=118" title="Live mempool treemap" loading="lazy"></iframe>
+              <iframe class="display-iframe" id="displayIframe" data-src="/mempool?embed=1&v=119" title="Live mempool treemap" loading="lazy"></iframe>
             </div>
             <div id="tx-detail-panel" class="tx-detail-panel" aria-hidden="true">
               <button type="button" class="btn-icon tx-detail-fullscreen" id="txDetailFullscreen" aria-label="Fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
@@ -664,6 +716,6 @@
     </script>
     <script src="/static/blockvase-api.js?v=91"></script>
     <script src="/static/qrcode.js?v=88"></script>
-    <script src="/static/index.js?v=365"></script>
+    <script src="/static/index.js?v=373"></script>
   </body>
 </html>
