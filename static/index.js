@@ -2178,9 +2178,15 @@ function datumPoolConnectCardsHtml(pool, info) {
 
 const DATUM_POOL_EMPTY_NOTE =
   "Empty (subsidy-only) finds freeze the share window and pay that snapshot after 100 confirmations. Fees from the find, not today's live fee: DATUM 0.21%; SV1 2.3% of the Stratum share (2% rebated to DATUM miners, 0.3% remainder to the pool); top 128; 546 sat floor.";
+const DATUM_POOL_FINDS_NOTE =
+  "Coinbase splits from pool-found blocks. Paid in the find itself. DATUM 0.21%; SV1 2.3% of the Stratum share (2% rebated to DATUM miners, 0.3% remainder to the pool); top 128; 546 sat floor.";
 const DATUM_POOL_EMPTY_PATH = "/api/empty";
+const DATUM_POOL_FINDS_PATH = "/api/finds";
 let lastEmptyFindsDoc = null;
 let lastEmptyFindsKey = "";
+let lastFindsDoc = null;
+let lastFindsKey = "";
+let datumPoolMinersView = "window";
 
 function datumPoolEmptyCount(pool, key) {
   const status = datumPoolObject(pool && pool.status) || {};
@@ -2204,9 +2210,83 @@ function datumPoolEmptyPayoutMap(find) {
   return map;
 }
 
-function datumPoolEmptyFindMinersTableHtml(find) {
+function datumPoolFindHasWindowWork(find) {
   const miners = Array.isArray(find && find.miners) ? find.miners : [];
+  return miners.some(function (row) {
+    return (
+      Number(row && row.work) > 0 ||
+      Number(row && row.datum_work) > 0 ||
+      Number(row && row.public_work) > 0
+    );
+  });
+}
+
+function datumPoolFindsNeedRefresh(doc) {
+  const finds = doc && Array.isArray(doc.finds) ? doc.finds : [];
+  if (!finds.length) return true;
+  return finds.some(function (find) {
+    const miners = Array.isArray(find && find.miners) ? find.miners : [];
+    return miners.length > 0 && !datumPoolFindHasWindowWork(find);
+  });
+}
+
+function datumPoolHistoryReady(pool) {
+  const found = datumPoolEmptyCount(pool, "blocks_found");
+  if (found <= 0) return true;
+  const finds = lastFindsDoc && Array.isArray(lastFindsDoc.finds) ? lastFindsDoc.finds : [];
+  return finds.length > 0 && !datumPoolFindsNeedRefresh(lastFindsDoc);
+}
+
+function datumPoolFindPayoutHref(find) {
+  const txid = normalizeTxid(
+    find && (find.txid || find.coinbase_txid || find.coinbase_tx || find.coinbase)
+  );
+  return txid ? viewerTxLocationHash(txid) : "";
+}
+
+function datumPoolFindPayoutCellHtml(find, sats) {
+  const text = sats == null ? "—" : formatNumber(Number(sats) || 0) + " sats";
+  const href = sats == null ? "" : datumPoolFindPayoutHref(find);
+  if (!href) return escapeHtml(text);
+  return (
+    '<a class="datum-pool-table__payout" href="' +
+    escapeHtml(href) +
+    '" title="Open coinbase in the block viewer">' +
+    escapeHtml(text) +
+    "</a>"
+  );
+}
+
+async function attachFindCoinbaseTxids(doc) {
+  const finds = doc && Array.isArray(doc.finds) ? doc.finds : [];
+  let changed = false;
+  await Promise.all(
+    finds.map(async function (find) {
+      if (!find || datumPoolFindPayoutHref(find) || find.height == null) return;
+      try {
+        const r = await fetchBlockTxsForAnimation(find.height, find.hash || find.block);
+        const txs = r && Array.isArray(r.txs) ? r.txs : [];
+        const coinbase = txs.find(function (tx) {
+          return tx && !Number(tx.fee_sats);
+        }) || txs[0];
+        const txid = normalizeTxid(coinbase && coinbase.txid);
+        if (!txid) return;
+        find.txid = txid;
+        changed = true;
+      } catch (_err) {}
+    })
+  );
+  return changed;
+}
+
+function datumPoolEmptyFindMinersTableHtml(find) {
+  let miners = Array.isArray(find && find.miners) ? find.miners.slice() : [];
   const payouts = datumPoolEmptyPayoutMap(find);
+  if (!miners.length && Object.keys(payouts).length) {
+    miners = Object.keys(payouts).map(function (id) {
+      return { id: id, kind: "datum", work: 0, datum_work: 0, public_work: 0 };
+    });
+  }
   if (!miners.length) {
     return '<p class="datum-pool-miner--empty">No identities in this frozen window.</p>';
   }
@@ -2249,7 +2329,7 @@ function datumPoolEmptyFindMinersTableHtml(find) {
           escapeHtml(formatDatumPercent(row.window_percent)) +
           "</td>" +
           '<td class="datum-pool-table__num">' +
-          escapeHtml(sats == null ? "—" : formatNumber(Number(sats) || 0) + " sats") +
+          datumPoolFindPayoutCellHtml(find, sats) +
           "</td>" +
           "</tr>"
         );
@@ -2269,7 +2349,12 @@ function datumPoolEmptyFact(label, valueHtml) {
   );
 }
 
-function datumPoolEmptyFindHtml(find) {
+function datumPoolFindHtml(find, kind) {
+  return datumPoolEmptyFindHtml(find, kind === "history" ? "history" : "empty");
+}
+
+function datumPoolEmptyFindHtml(find, kind) {
+  kind = kind === "history" ? "history" : "empty";
   const height = find && find.height != null ? String(find.height) : "";
   const block = String((find && find.block) || "").trim();
   const found = formatMetricsAsOf(find && find.found_at);
@@ -2295,13 +2380,16 @@ function datumPoolEmptyFindHtml(find) {
     datumPoolEmptyFact("Found", escapeHtml(found || "—")) +
     datumPoolEmptyFact("Value", escapeHtml(Number.isFinite(value) ? formatNumber(value) + " sats" : "—")) +
     datumPoolEmptyFact("Fee", escapeHtml(formatDatumBps(find && find.fee_bps, "0%"))) +
-    datumPoolEmptyFact("Status", escapeHtml(settled ? "Settled" : "Unsettled")) +
-    datumPoolEmptyFact("Mature after", escapeHtml(mature || "—")) +
+    datumPoolEmptyFact("Status", escapeHtml(kind === "history" ? "Paid in coinbase" : settled ? "Settled" : "Unsettled")) +
+    (kind === "history" ? "" : datumPoolEmptyFact("Mature after", escapeHtml(mature || "—"))) +
     "</div>" +
     datumPoolEmptyFindMinersTableHtml(find) +
     '<p class="muted-note datum-pool-empty__leftover">Leftover ' +
     escapeHtml(Number.isFinite(leftover) ? formatNumber(leftover) + " sats" : "N/A") +
-    " stays on the pool script (fee, dust, or past the 128-output cap).</p>" +
+    (kind === "history"
+      ? " stayed on the pool script (fee, dust, or past the 128-output cap)."
+      : " stays on the pool script (fee, dust, or past the 128-output cap).") +
+    "</p>" +
     "</article>"
   );
 }
@@ -2314,7 +2402,9 @@ function datumPoolEmptyBankHtml(pool, emptyDoc) {
   if (findsCount > 0 && !emptyDoc) {
     body = '<p class="muted-note datum-pool-empty__state">Loading empty finds…</p>';
   } else if (finds.length) {
-    body = finds.map(datumPoolEmptyFindHtml).join("");
+    body = finds.map(function (find) {
+      return datumPoolEmptyFindHtml(find, "empty");
+    }).join("");
   }
   return (
     '<div class="datum-pool-empty">' +
@@ -2327,9 +2417,53 @@ function datumPoolEmptyBankHtml(pool, emptyDoc) {
   );
 }
 
-function datumPoolBoardHtml(pool, emptyDoc) {
+function datumPoolFindsHtml(pool, findsDoc) {
+  const found = datumPoolEmptyCount(pool, "blocks_found");
+  const finds = findsDoc && Array.isArray(findsDoc.finds) ? findsDoc.finds : [];
+  if (found <= 0 && !finds.length) {
+    return '<p class="muted-note datum-pool-empty__state">No pool-found blocks yet.</p>';
+  }
+  if (found > 0 && !findsDoc) {
+    return '<p class="muted-note datum-pool-empty__state">Loading payout history…</p>';
+  }
+  if (!finds.length) {
+    return (
+      '<p class="muted-note datum-pool-empty__state">' +
+      escapeHtml(
+        found === 1
+          ? "Prime counted 1 found block, but has not published its coinbase split yet."
+          : "Prime counted " +
+            formatNumber(found) +
+            " found blocks, but has not published those coinbase splits yet."
+      ) +
+      "</p>"
+    );
+  }
+  return finds.map(function (find) {
+    return datumPoolEmptyFindHtml(find, "history");
+  }).join("");
+}
+
+function datumPoolMinersToggleHtml(view) {
+  return (
+    '<div class="pool-share-toggle datum-pool-miners__toggle" role="tablist" aria-label="Payout identities view">' +
+    '<button type="button" class="pool-share-toggle__btn' +
+    (view === "window" ? " is-active" : "") +
+    '" role="tab" aria-selected="' +
+    (view === "window" ? "true" : "false") +
+    '" data-datum-miners-view="window">Window</button>' +
+    '<button type="button" class="pool-share-toggle__btn' +
+    (view === "history" ? " is-active" : "") +
+    '" role="tab" aria-selected="' +
+    (view === "history" ? "true" : "false") +
+    '" data-datum-miners-view="history">History</button></div>'
+  );
+}
+
+function datumPoolBoardHtml(pool, emptyDoc, findsDoc) {
   if (!datumPoolUsable(pool)) return datumPoolUnavailableHtml();
   if (emptyDoc == null) emptyDoc = lastEmptyFindsDoc;
+  if (findsDoc == null) findsDoc = lastFindsDoc;
   const info = datumPoolObject(pool.pool) || {};
   const name = String(info.name || "DATUM pool").trim() || "DATUM pool";
   const style = String(info.style || "").trim() ||
@@ -2373,12 +2507,18 @@ function datumPoolBoardHtml(pool, emptyDoc) {
     datumPoolConnectCardsHtml(pool, info) +
     "</div>" +
     '<div class="datum-pool-miners">' +
+    '<div class="datum-pool-miners__head">' +
     '<h3 class="datum-pool-miners__title">Payout identities</h3>' +
-    '<p class="datum-pool-miners__hint">' +
-    escapeHtml(minerHint) +
-    "</p>" +
-    datumPoolMinersTableHtml(miners) +
+    datumPoolMinersToggleHtml(datumPoolMinersView) +
     "</div>" +
+    '<p class="datum-pool-miners__hint" data-datum-miners-hint>' +
+    escapeHtml(datumPoolMinersView === "history" ? DATUM_POOL_FINDS_NOTE : minerHint) +
+    "</p>" +
+    '<div class="datum-pool-miners__body">' +
+    (datumPoolMinersView === "history"
+      ? datumPoolFindsHtml(pool, findsDoc)
+      : datumPoolMinersTableHtml(miners)) +
+    "</div></div>" +
     datumPoolEmptyBankHtml(pool, emptyDoc) +
     '<div class="datum-pool-footer">' +
     '<p class="muted-note datum-pool-audit">' +
@@ -2389,18 +2529,64 @@ function datumPoolBoardHtml(pool, emptyDoc) {
     '<a href="' +
     escapeHtml(datumPoolEmptyLink(pool)) +
     '">Empty finds</a>' +
+    " · " +
+    '<a href="' +
+    escapeHtml(DATUM_POOL_FINDS_PATH) +
+    '">Payout history</a>' +
     "</p>" +
     sourceHtml +
     "</div></section>"
   );
 }
 
-function syncDatumPoolBoard(pool, emptyDoc) {
+function datumPoolMinerHint(pool) {
+  const meaning = String((pool && pool.window_percent_meaning) || "").trim();
+  return meaning ||
+    "Window % = payout split. Hash % = " +
+    datumPoolHashrateWindowLabel(pool).replace(" avg", "") +
+    " work share.";
+}
+
+function paintDatumPoolMinersChrome(pool) {
+  const host = document.getElementById("datumPoolBoard");
+  if (!host) return false;
+  const view = datumPoolMinersView === "history" ? "history" : "window";
+  host.querySelectorAll("[data-datum-miners-view]").forEach(function (btn) {
+    const on = btn.getAttribute("data-datum-miners-view") === view;
+    btn.classList.toggle("is-active", on);
+    btn.setAttribute("aria-selected", on ? "true" : "false");
+  });
+  const hint = host.querySelector("[data-datum-miners-hint]");
+  if (hint) hint.textContent = view === "history" ? DATUM_POOL_FINDS_NOTE : datumPoolMinerHint(pool);
+  return true;
+}
+
+function paintDatumPoolMinersView(pool) {
+  const host = document.getElementById("datumPoolBoard");
+  if (!host) return;
+  if (!paintDatumPoolMinersChrome(pool)) return;
+  const body = host.querySelector(".datum-pool-miners__body");
+  if (!body) {
+    syncDatumPoolBoard(pool);
+    return;
+  }
+  const view = datumPoolMinersView === "history" ? "history" : "window";
+  const prevH = body.offsetHeight;
+  if (prevH) body.style.minHeight = prevH + "px";
+  body.innerHTML = view === "history"
+    ? datumPoolFindsHtml(pool, lastFindsDoc)
+    : datumPoolMinersTableHtml(datumPoolMiners(pool));
+  requestAnimationFrame(function () {
+    body.style.minHeight = "";
+  });
+}
+
+function syncDatumPoolBoard(pool, emptyDoc, findsDoc) {
   const host = document.getElementById("datumPoolBoard");
   if (!host) return;
   if (datumPoolUsable(pool)) mergeMetricPoint("pool", poolMetricPoint(pool));
   withLiveView(host, function () {
-    host.innerHTML = datumPoolBoardHtml(pool, emptyDoc);
+    host.innerHTML = datumPoolBoardHtml(pool, emptyDoc, findsDoc);
   });
   paintMetricCharts(host);
 }
@@ -2415,16 +2601,45 @@ async function loadEmptyFindsIfNeeded(pool) {
     return hadDoc;
   }
   const key = finds + ":" + unsettled;
-  if (lastEmptyFindsDoc && lastEmptyFindsKey === key) return false;
+  if (lastEmptyFindsDoc && lastEmptyFindsKey === key) {
+    return attachFindCoinbaseTxids(lastEmptyFindsDoc);
+  }
   try {
     const r = await blockvasePublicFetch("/empty");
     const d = await r.json();
     if (!d || typeof d !== "object") return false;
     lastEmptyFindsDoc = d;
     lastEmptyFindsKey = key;
+    await attachFindCoinbaseTxids(lastEmptyFindsDoc);
     return true;
   } catch (_err) {
     return false;
+  }
+}
+
+async function loadFindsIfNeeded(pool) {
+  const found = datumPoolEmptyCount(pool, "blocks_found");
+  if (found <= 0) {
+    const hadDoc = !!lastFindsDoc;
+    lastFindsDoc = null;
+    lastFindsKey = "";
+    return hadDoc;
+  }
+  const key = String(found);
+  if (lastFindsDoc && lastFindsKey === key && !datumPoolFindsNeedRefresh(lastFindsDoc)) {
+    return attachFindCoinbaseTxids(lastFindsDoc);
+  }
+  try {
+    const r = await blockvasePublicFetch("/finds");
+    const d = await r.json();
+    lastFindsDoc = d && typeof d === "object" ? d : { finds: [] };
+    lastFindsKey = key;
+    await attachFindCoinbaseTxids(lastFindsDoc);
+    return true;
+  } catch (_err) {
+    lastFindsDoc = { finds: [] };
+    lastFindsKey = "";
+    return true;
   }
 }
 
@@ -2434,6 +2649,23 @@ function initDatumPoolBoard() {
   host.dataset.bound = "1";
   if (!host.innerHTML.trim()) syncDatumPoolBoard(null);
   host.addEventListener("click", function (event) {
+    const viewBtn = event.target.closest("[data-datum-miners-view]");
+    if (viewBtn && host.contains(viewBtn)) {
+      event.preventDefault();
+      event.stopPropagation();
+      const next = viewBtn.getAttribute("data-datum-miners-view") === "history" ? "history" : "window";
+      if (next === datumPoolMinersView) return;
+      datumPoolMinersView = next;
+      if (next === "history" && !datumPoolHistoryReady(lastDatumPool)) {
+        paintDatumPoolMinersChrome(lastDatumPool);
+        loadFindsIfNeeded(lastDatumPool).then(function () {
+          paintDatumPoolMinersView(lastDatumPool);
+        });
+        return;
+      }
+      paintDatumPoolMinersView(lastDatumPool);
+      return;
+    }
     const btn = event.target.closest("[data-datum-copy]");
     if (!btn || !host.contains(btn)) return;
     const text = btn.getAttribute("data-datum-copy") || "";
@@ -2790,6 +3022,7 @@ async function loadPrimePool() {
     if (adoptDatumPool(pool)) {
       syncDatumPoolBoard(lastDatumPool);
       if (await loadEmptyFindsIfNeeded(lastDatumPool)) syncDatumPoolBoard(lastDatumPool);
+      if (await loadFindsIfNeeded(lastDatumPool)) syncDatumPoolBoard(lastDatumPool);
     }
   } catch (_err) {
     // Keep the last Prime cache. Do not wait for node-data ingest.
@@ -3602,9 +3835,10 @@ function renderBlockCarousel(d, mining) {
   updateMempoolBoardCopy(currentCarouselItem());
 }
 
-function closeTxExplorerPanel() {
+function closeTxExplorerPanel(keepLocation) {
   const panel = document.getElementById("tx-detail-panel");
   const closeBtn = document.querySelector(".tx-detail-close");
+  if (keepLocation) openTxExplorer._keepLocation = true;
   if (panel && panel.classList.contains("expanded") && closeBtn) closeBtn.click();
 }
 
@@ -4153,7 +4387,7 @@ async function loadMetrics() {
           }),
           portalKpiHtml("Server node peers", formatNumber(d.connections || 0), {
             chart: "viewer.connections",
-            tool: isBlockvasePreviewHost() ? peerCensusOpenButtonHtml() : "",
+            tool: peerCensusOpenButtonHtml(),
           }),
         ],
         "portal-kpi-strip--in-board"
@@ -5799,7 +6033,6 @@ function setPeerCensusCluster(mode) {
 }
 
 function initPeerCensusPanel() {
-  if (!isBlockvasePreviewHost()) return;
   renderPeerCensusCounts({});
   syncPeerCensusClusterToggle();
   const closeBtn = document.getElementById("peerCensusClose");
@@ -5924,13 +6157,28 @@ function clearViewerTxidFromLocation() {
   syncingViewerTxLocation = false;
 }
 
+function clearViewerForLinkedTx() {
+  cancelPortalMempoolSearch();
+  setPortalMempoolSearchStatus("");
+  setPortalSearchingNode(false);
+  blockCarouselState.pendingSelectTxid = "";
+  blockCarouselState.selected = "";
+  blockCarouselState.loadingKey = "";
+  blockCarouselState.pinScrollKey = "";
+  closeTxExplorerPanel(true);
+  clearBlockTxsRetry();
+  renderBlockCarouselRefresh();
+  postToMempoolIframe({ type: "blockvase-clear-mempool" });
+}
+
 function applyViewerTxDeepLink() {
   const txid = parseViewerTxidFromLocation();
   if (!txid) return;
+  clearViewerForLinkedTx();
   setViewerTxidInLocation(txid);
   const input = document.getElementById("mempoolTxSearchInput");
   if (input) input.value = txid;
-  portalMempoolSearch(txid, true);
+  portalMempoolSearch(txid, true, { skipIframe: true });
 }
 
 function isCompleteBlockHeightSearch(query) {
@@ -5953,8 +6201,9 @@ function initPortalMempoolSearch() {
   let portalSearchSeq = 0;
   const resolvedSearchSeqs = new Set();
 
-  function search(query, fromSubmit) {
+  function search(query, fromSubmit, options) {
     const q = String(query || "").trim();
+    const opts = options || {};
     if (!q) {
       setPortalMempoolSearchStatus("");
       return;
@@ -5967,7 +6216,7 @@ function initPortalMempoolSearch() {
     }
     const seq = ++portalSearchSeq;
     setPortalMempoolSearchStatus("Searching node", false, { searching: true });
-    if (isCompleteBlockHeightSearch(q)) {
+    if (isCompleteBlockHeightSearch(q) || opts.skipIframe) {
       void locateAndShowSearchMatch(q, seq);
       return;
     }
@@ -6008,7 +6257,7 @@ function isBlockHeightSearch(query) {
     const wantLive = data.source === "mempool";
     const key = wantLive ? "live" : (data.height == null ? "" : String(data.height));
     if (!wantLive && data.height != null) applySearchHitToCarouselItem(data);
-    const alreadyThere = blockCarouselState.selected === key || (wantLive && (!blockCarouselState.selected || blockCarouselState.selected === "live"));
+    const alreadyThere = Boolean(key) && blockCarouselState.selected === key;
     if (alreadyThere) {
       blockCarouselState.pinScrollKey = key;
       revealPinnedCarouselCard();
@@ -6285,7 +6534,7 @@ function initPortalTabs() {
     const txid = parseViewerTxidFromLocation();
     showTab(window.location.hash.replace("#", ""));
     if (txid && normalizePortalTab(window.location.hash.replace("#", "")) === "viewer") {
-      portalMempoolSearch(txid, true);
+      applyViewerTxDeepLink();
     }
   });
 
@@ -9363,6 +9612,9 @@ function postToMempoolIframe(data) {
     if (data?.type === "blockvase-load-block" && typeof win.applyHistoricalBlock === "function") {
       win.applyHistoricalBlock(data.txs || [], data.selectTxid || "");
       delivered = true;
+    } else if (data?.type === "blockvase-clear-mempool" && typeof win.clearMempoolView === "function") {
+      win.clearMempoolView();
+      delivered = true;
     } else if (data?.type === "blockvase-resume-mempool" && typeof win.resumeLiveMempool === "function") {
       win.resumeLiveMempool(data.selectTxid || "");
       delivered = true;
@@ -9407,7 +9659,8 @@ function initTxDetailPanel() {
     panel.classList.remove("expanded", "is-closing");
     panel.setAttribute("aria-hidden", "true");
     openTxExplorer._txid = "";
-    clearViewerTxidFromLocation();
+    if (!openTxExplorer._keepLocation) clearViewerTxidFromLocation();
+    openTxExplorer._keepLocation = false;
     postToMempoolIframe({ type: "blockvase-tx-deselect" });
   }
 
@@ -9423,6 +9676,7 @@ function initTxDetailPanel() {
     clearTimeout(txDetailCloseTimer);
     txDetailCloseTimer = 0;
     panel.classList.remove("is-closing");
+    openTxExplorer._keepLocation = false;
   }
 
   closeBtn.addEventListener("click", closePanel);

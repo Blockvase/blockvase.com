@@ -1953,6 +1953,18 @@ body.portal-page .datum-pool-miners__title {
   text-transform: uppercase;
 }
 
+body.portal-page .datum-pool-miners__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--portal-space-2);
+}
+
+body.portal-page .datum-pool-miners__toggle {
+  margin-left: auto;
+}
+
 body.portal-page .datum-pool-card__note {
   margin: 0;
   max-width: 46rem;
@@ -2124,6 +2136,12 @@ body.portal-page .datum-pool-table__user {
 body.portal-page .datum-pool-table__num {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+body.portal-page .datum-pool-table__payout {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
 }
 
 body.portal-page .datum-pool-miners__list {

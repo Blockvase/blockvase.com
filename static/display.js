@@ -913,6 +913,27 @@ function applyHistoricalBlock(txs, selectTxid) {
   if (selectTxid) selectMempoolTransaction(selectTxid);
 }
 
+function hideMempoolMessage(container) {
+  const empty = container && container.querySelector(".mempool-empty");
+  if (empty) empty.remove();
+}
+
+function clearMempoolView() {
+  historicalBlockActive = true;
+  pendingResumeSelectTxid = null;
+  lastMempoolTxs = [];
+  setMempoolAnimationsPaused(true);
+  const container = document.getElementById("mempool-treemap");
+  if (!container) return;
+  hideMempoolMessage(container);
+  const scene = getMempoolScene(container);
+  if (typeof scene.setSelectedTxid === "function") scene.setSelectedTxid(null);
+  scene.lastTxs = [];
+  scene.clear();
+  if (typeof scene.setPaused === "function") scene.setPaused(true);
+  if (typeof scene.requestDraw === "function") scene.requestDraw();
+}
+
 function resumeLiveMempool(selectTxid) {
   pendingResumeSelectTxid = selectTxid || null;
   historicalBlockActive = false;
@@ -1671,6 +1692,9 @@ window.addEventListener("message", (ev) => {
   if (ev.data?.type === "blockvase-tx-deselect") {
     mempoolScene?.setSelectedTxid(null);
   }
+  if (ev.data?.type === "blockvase-clear-mempool") {
+    clearMempoolView();
+  }
   if (ev.data?.type === "blockvase-tx-search" && ev.data.q != null) {
     runMempoolSearch(ev.data.q, ev.data.seq);
   }
@@ -1841,3 +1865,4 @@ setInterval(tickSyncOverlay, SYNC_OVERLAY_POLL_MS);
 window.applyHistoricalBlock = applyHistoricalBlock;
 window.resumeLiveMempool = resumeLiveMempool;
 window.selectMempoolTransaction = selectMempoolTransaction;
+window.clearMempoolView = clearMempoolView;
