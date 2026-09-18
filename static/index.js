@@ -3,6 +3,8 @@ function formatNumber(n) {
 }
 
 const BLOCKVASE_VIEWER_PEER_CONNECTION = "addnode=node.blockvase.com:8333";
+const BLOCKVASE_VIEWER_PEER_ONION_CONNECTION =
+  "addnode=54epspakg4xwdi2gxs3s7mlvlldkqucu6yini7dic7pi3h6fdd7ydyad.onion:8333";
 
 function formatNodeConnection(subversion, nodeVersion) {
   const sent = String(nodeVersion || "").trim();
@@ -2755,6 +2757,9 @@ function lightningCapacitySat(channel) {
   return 0;
 }
 
+const BLOCKVASE_LIGHTNING_ONION_URI =
+  "0267787e5babdbed0beaae2a52d0e0c00aa86603333bd6916df7d7b8fbb5d8e219@sdqv2ziompvgzqgx5kepez5pxcucfcqsih67tkftchb3knbgacwignad.onion:9735";
+
 function lightningQrHtml(uri) {
   const text = String(uri || "").trim();
   if (!text || typeof qrcode !== "function") return "";
@@ -2770,6 +2775,46 @@ function lightningQrHtml(uri) {
   } catch (_err) {
     return "";
   }
+}
+
+function lightningQrPairHtml(uri, onionUri) {
+  const clear = lightningQrHtml(uri);
+  const onion = onionUri && onionUri !== uri ? lightningQrHtml(onionUri) : "";
+  if (!clear && !onion) return "";
+  if (!onion) return clear;
+  return (
+    '<div class="lightning-qrs">' +
+    (clear
+      ? '<div class="lightning-qr-wrap"><span class="lightning-qr-label">URI</span>' + clear + "</div>"
+      : "") +
+    '<div class="lightning-qr-wrap"><span class="lightning-qr-label">Onion</span>' + onion + "</div>" +
+    "</div>"
+  );
+}
+
+function lightningAddressIsOnion(row) {
+  if (!row || typeof row !== "object") return false;
+  const type = String(row.type || "").toLowerCase();
+  if (type === "torv3" || type === "onion" || type === "tor") return true;
+  return String(row.address || row.host || "").toLowerCase().endsWith(".onion");
+}
+
+function lightningOnionConnect(lightning) {
+  const node = lightningObject(lightning && lightning.node) || {};
+  const rows = Array.isArray(node.addresses) ? node.addresses : [];
+  const row = rows.find(lightningAddressIsOnion);
+  const fallback = BLOCKVASE_LIGHTNING_ONION_URI.split("@");
+  const fallbackHost = ((fallback[1] || "").split(":")[0] || "").trim();
+  if (!row) {
+    return { uri: BLOCKVASE_LIGHTNING_ONION_URI, host: fallbackHost };
+  }
+  const host = String(row.address || row.host || "").trim();
+  const port = row.port != null ? String(row.port) : node.port != null ? String(node.port) : "9735";
+  const id = String(node.id || "").trim();
+  return {
+    uri: id && host ? id + "@" + host + (port ? ":" + port : "") : BLOCKVASE_LIGHTNING_ONION_URI,
+    host: host || fallbackHost,
+  };
 }
 
 function lightningChannelIsPrivate(row) {
@@ -2858,6 +2903,7 @@ function lightningConnectCardsHtml(lightning) {
   const status = lightningObject(lightning && lightning.status) || {};
   const uri = String(links.uri || node.uri || "").trim();
   const host = String(links.host || "").trim();
+  const onion = lightningOnionConnect(lightning);
   const port = links.port != null ? String(links.port) : (node.port != null ? String(node.port) : "");
   const nodeId = String(node.id || "").trim();
   const color = String(node.color || "").trim();
@@ -2866,9 +2912,11 @@ function lightningConnectCardsHtml(lightning) {
     '<h3 class="datum-pool-card__title">Connect</h3>' +
     '<p class="datum-pool-card__note">Use a BLAKE2b-capable Lightning node.</p>' +
     datumPoolCopyControl("URI", uri, "mono") +
+    datumPoolCopyControl("Onion URI", onion.uri, "mono") +
     (host ? datumPoolCopyControl("Host", host, "hint") : "") +
+    (onion.host ? datumPoolCopyControl("Onion", onion.host, "hint") : "") +
     (port ? datumPoolCopyControl("Port", port, "hint") : "") +
-    lightningQrHtml(uri) +
+    lightningQrPairHtml(uri, onion.uri) +
     "</article>";
   const nodeCard =
     '<article class="datum-pool-card">' +
@@ -3528,13 +3576,10 @@ function updateViewerTabAsOf(note) {
     '<span class="viewer-tab-asof__time viewer-tab-asof__time--compact">' +
     metricEscape(compactNote) +
     "</span>" +
-    '<button type="button" class="datum-pool-copy viewer-peer-copy" data-viewer-peer-copy data-copy="' +
-    metricEscape(BLOCKVASE_VIEWER_PEER_CONNECTION) +
-    '">' +
-    '<span class="datum-pool-copy__value">' +
-    viewerPeerConnectionHtml() +
-    "</span>" +
-    "</button>";
+    '<span class="viewer-peer-copies">' +
+    viewerPeerCopyButtonHtml(BLOCKVASE_VIEWER_PEER_CONNECTION, "addnode (clearnet)") +
+    viewerPeerCopyButtonHtml(BLOCKVASE_VIEWER_PEER_ONION_CONNECTION, "addnode (tor)") +
+    "</span>";
 }
 
 function updateBlockCarouselAsOf(note) {
@@ -3548,17 +3593,15 @@ function compactViewerTabAsOf(note) {
   return "As of " + m[1] + (m[2] ? " " + m[2].toUpperCase() : "") + (m[3] ? " " + m[3].toUpperCase() : "");
 }
 
-function viewerPeerConnectionHtml() {
-  const text = BLOCKVASE_VIEWER_PEER_CONNECTION;
-  const prefix = "addnode=";
-  if (!text.startsWith(prefix)) return metricEscape(text);
+function viewerPeerCopyButtonHtml(copyText, label) {
   return (
-    '<span class="viewer-peer-copy__prefix">' +
-    metricEscape(prefix) +
+    '<button type="button" class="datum-pool-copy viewer-peer-copy" data-viewer-peer-copy data-copy="' +
+    metricEscape(copyText) +
+    '">' +
+    '<span class="datum-pool-copy__value">' +
+    metricEscape(label) +
     "</span>" +
-    '<span class="viewer-peer-copy__host">' +
-    metricEscape(text.slice(prefix.length)) +
-    "</span>"
+    "</button>"
   );
 }
 

@@ -2201,9 +2201,34 @@ body.portal-page .lightning-badge {
   text-transform: uppercase;
 }
 
-body.portal-page .lightning-qr {
-  width: min(112px, 100%);
+body.portal-page .lightning-qrs {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 16px;
   margin-top: 2px;
+}
+
+body.portal-page .lightning-qr-wrap {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  gap: 4px;
+  width: 112px;
+}
+
+body.portal-page .lightning-qr-label {
+  color: var(--muted);
+  font-size: var(--portal-text-caption);
+  font-weight: 650;
+  letter-spacing: var(--portal-track-overline);
+  text-transform: uppercase;
+}
+
+body.portal-page .lightning-qr {
+  width: 112px;
+  margin-top: 0;
 }
 
 body.portal-page .lightning-qr svg {
@@ -5246,8 +5271,18 @@ body.portal-page #metrics .viewer-tab-asof::-webkit-scrollbar {
 }
 
 body.portal-page .viewer-tab-asof__time,
+body.portal-page .viewer-peer-copies,
 body.portal-page .viewer-peer-copy {
   flex: 0 0 auto;
+}
+
+body.portal-page .viewer-peer-copies {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
 }
 
 body.portal-page .viewer-tab-asof__time--compact {
@@ -5257,7 +5292,7 @@ body.portal-page .viewer-tab-asof__time--compact {
 body.portal-page .viewer-peer-copy {
   align-items: center;
   justify-content: center;
-  margin-left: auto;
+  margin-left: 0;
   min-height: 20px;
   padding: 2px 7px;
   font-size: 10px;
