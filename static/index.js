@@ -3329,7 +3329,7 @@ function carryCarouselLabels(items) {
 
 function carouselItemHasDisplayMeta(item) {
   if (!item || item.mining) return true;
-  return !!(item.timestamp || item.pool || item.coinbase || item.size);
+  return !!(item.timestamp || item.pool || item.coinbase);
 }
 
 function carouselItemIsPending(item) {
@@ -3377,7 +3377,9 @@ function applySearchHitToCarouselItem(data) {
   const item = ensureCarouselRangeForHeight(data.height, meta.hash);
   if (!item) return null;
   applyCarouselBlockMeta(Object.assign({ height: data.height }, meta));
+  if (!carouselItemHasDisplayMeta(item)) item._lookupContext = true;
   renderBlockCarouselRefresh();
+  void hydrateCarouselRangeAroundHeight(data.height, meta.hash || item.hash);
   return item;
 }
 
@@ -3488,7 +3490,7 @@ function blockCarouselCardHtml(item) {
       (extra ? "<span>" + extra + "</span>" : "") +
     "</span>" +
     '<span class="block-carousel__stats">' +
-      (pending
+      (pending && !item.size && !item.txCount
         ? "<span>…</span>"
         : "<span>" + formatNumber(item.txCount || 0) + " tx</span>" +
           "<span>" + escapeHtml(formatBytes(item.size || 0)) + "</span>") +
@@ -3660,6 +3662,16 @@ function carouselMountedCount(items) {
     if (!key) return;
     const idx = items.findIndex(function (b) { return b && b.key === key; });
     if (idx >= 0) n = Math.max(n, idx + 1);
+    const height = Number(key);
+    if (!Number.isFinite(height) || height <= 0) return;
+    const minH = height - BLOCK_CAROUSEL_LOOKUP_CONTEXT_RADIUS;
+    const maxH = height + BLOCK_CAROUSEL_LOOKUP_CONTEXT_RADIUS;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (!item || item.mining) continue;
+      const h = Number(item.height) || 0;
+      if (h && h >= minH && h <= maxH) n = Math.max(n, i + 1);
+    }
   });
   return Math.min(items.length, Math.max(BLOCK_CAROUSEL_LAZY_BATCH, n));
 }
@@ -3996,9 +4008,30 @@ function clearCarouselHydrateRetry() {
   carouselHydrateRetryCount = 0;
 }
 
+function settleCarouselRangeMeta(height) {
+  const h = Number(height);
+  if (!Number.isFinite(h) || h < 0) return;
+  const minH = Math.max(0, h - BLOCK_CAROUSEL_LOOKUP_CONTEXT_RADIUS);
+  const maxH = h + BLOCK_CAROUSEL_LOOKUP_CONTEXT_RADIUS;
+  let changed = false;
+  (blockCarouselState.items || []).forEach(function (item) {
+    if (!item || item.mining) return;
+    const n = Number(item.height) || 0;
+    if (n < minH || n > maxH) return;
+    if ((item.size || item.txCount || item.hash) && item._lookupContext) {
+      item._lookupContext = false;
+      changed = true;
+    }
+  });
+  if (changed) renderBlockCarouselRefresh();
+}
+
 function scheduleCarouselHydrateRetry(height, hash) {
   const key = String(height);
-  if (carouselHydrateRetryKey === key && carouselHydrateRetryCount >= BLOCK_CAROUSEL_HYDRATE_RETRY_MAX) return;
+  if (carouselHydrateRetryKey === key && carouselHydrateRetryCount >= BLOCK_CAROUSEL_HYDRATE_RETRY_MAX) {
+    settleCarouselRangeMeta(height);
+    return;
+  }
   if (carouselHydrateRetryTimer) clearTimeout(carouselHydrateRetryTimer);
   if (carouselHydrateRetryKey !== key) {
     carouselHydrateRetryKey = key;
@@ -4042,7 +4075,10 @@ async function hydrateCarouselRangeAroundHeight(height, hash) {
     renderBlockCarouselRefresh();
     revealPinnedCarouselCard();
     if (carouselRangeStillNeedsMeta(minH, maxH)) scheduleCarouselHydrateRetry(h, hash);
-    else if (carouselHydrateRetryKey === String(h)) clearCarouselHydrateRetry();
+    else {
+      settleCarouselRangeMeta(h);
+      if (carouselHydrateRetryKey === String(h)) clearCarouselHydrateRetry();
+    }
   } catch (_) {
     scheduleCarouselHydrateRetry(h, hash);
   }
@@ -6260,6 +6296,9 @@ function isBlockHeightSearch(query) {
     const alreadyThere = Boolean(key) && blockCarouselState.selected === key;
     if (alreadyThere) {
       blockCarouselState.pinScrollKey = key;
+      if (!wantLive && data.height != null) {
+        void hydrateCarouselRangeAroundHeight(data.height, data.hash || "");
+      }
       revealPinnedCarouselCard();
       if (blockCarouselState.loadingKey) blockCarouselState.pendingSelectTxid = data.txid;
       else postToMempoolIframe({ type: "blockvase-select-tx", txid: data.txid });
