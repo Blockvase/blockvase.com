@@ -2187,6 +2187,10 @@ const DATUM_POOL_FINDS_PATH = "/api/finds";
 let lastEmptyFindsDoc = null;
 let lastEmptyFindsKey = "";
 let lastFindsDoc = null;
+const DATUM_POOL_FINDS_BATCH = 1;
+let datumPoolFindsObserver = null;
+let datumPoolFindsShown = 0;
+let datumPoolFindsShownKey = "";
 let lastFindsKey = "";
 let datumPoolMinersView = "window";
 
@@ -2419,9 +2423,97 @@ function datumPoolEmptyBankHtml(pool, emptyDoc) {
   );
 }
 
+function datumPoolSortedFinds(doc) {
+  const finds = doc && Array.isArray(doc.finds) ? doc.finds.slice() : [];
+  finds.sort(function (a, b) {
+    const ta = Number(a && a.found_at) || 0;
+    const tb = Number(b && b.found_at) || 0;
+    if (tb !== ta) return tb - ta;
+    return (Number(b && b.height) || 0) - (Number(a && a.height) || 0);
+  });
+  return finds;
+}
+
+function stopDatumPoolFindsLazy() {
+  if (datumPoolFindsObserver) {
+    datumPoolFindsObserver.disconnect();
+    datumPoolFindsObserver = null;
+  }
+}
+
+function resetDatumPoolFindsProgress() {
+  datumPoolFindsShown = 0;
+  datumPoolFindsShownKey = "";
+}
+
+function datumPoolFindsIdentity(finds) {
+  return finds.map(function (find) {
+    return String((find && find.height) || "") + ":" + String((find && find.found_at) || "");
+  }).join("|");
+}
+
+function ensureDatumPoolFindsLazy(host) {
+  stopDatumPoolFindsLazy();
+  const root = host && host.querySelector("[data-datum-finds]");
+  if (!root) return;
+  const list = root.querySelector(".datum-pool-finds__list");
+  const more = root.querySelector("[data-datum-finds-more]");
+  const finds = datumPoolSortedFinds(lastFindsDoc);
+  if (!list) return;
+  const identity = datumPoolFindsIdentity(finds);
+  if (identity !== datumPoolFindsShownKey) {
+    datumPoolFindsShown = 0;
+    datumPoolFindsShownKey = identity;
+  }
+  let shown = list.querySelectorAll(".datum-pool-empty__find").length;
+  function appendRange(end) {
+    end = Math.min(finds.length, end);
+    if (shown >= end) return;
+    const frag = document.createDocumentFragment();
+    for (let i = shown; i < end; i++) {
+      const wrap = document.createElement("div");
+      wrap.innerHTML = datumPoolEmptyFindHtml(finds[i], "history");
+      if (wrap.firstElementChild) frag.appendChild(wrap.firstElementChild);
+    }
+    list.appendChild(frag);
+    shown = end;
+    datumPoolFindsShown = shown;
+    if (more) more.hidden = shown >= finds.length;
+    if (shown >= finds.length) stopDatumPoolFindsLazy();
+  }
+  function appendBatch() {
+    if (shown >= finds.length) {
+      if (more) more.hidden = true;
+      stopDatumPoolFindsLazy();
+      return;
+    }
+    appendRange(shown + DATUM_POOL_FINDS_BATCH);
+    if (shown < finds.length) requestAnimationFrame(fillIfVisible);
+  }
+  function fillIfVisible() {
+    if (!more || more.hidden || shown >= finds.length) return;
+    const rect = more.getBoundingClientRect();
+    if (rect.top < (window.innerHeight || 0) + 320) appendBatch();
+  }
+  appendRange(Math.max(shown, datumPoolFindsShown, DATUM_POOL_FINDS_BATCH));
+  if (shown >= finds.length || !more) return;
+  if (typeof IntersectionObserver !== "function") {
+    while (shown < finds.length) appendBatch();
+    return;
+  }
+  datumPoolFindsObserver = new IntersectionObserver(
+    function (entries) {
+      if (entries.some(function (entry) { return entry.isIntersecting; })) appendBatch();
+    },
+    { root: null, rootMargin: "320px 0px", threshold: 0 }
+  );
+  datumPoolFindsObserver.observe(more);
+  requestAnimationFrame(fillIfVisible);
+}
+
 function datumPoolFindsHtml(pool, findsDoc) {
   const found = datumPoolEmptyCount(pool, "blocks_found");
-  const finds = findsDoc && Array.isArray(findsDoc.finds) ? findsDoc.finds : [];
+  const finds = datumPoolSortedFinds(findsDoc);
   if (found <= 0 && !finds.length) {
     return '<p class="muted-note datum-pool-empty__state">No pool-found blocks yet.</p>';
   }
@@ -2441,9 +2533,12 @@ function datumPoolFindsHtml(pool, findsDoc) {
       "</p>"
     );
   }
-  return finds.map(function (find) {
-    return datumPoolEmptyFindHtml(find, "history");
-  }).join("");
+  return (
+    '<div class="datum-pool-finds" data-datum-finds>' +
+    '<div class="datum-pool-finds__list"></div>' +
+    '<p class="muted-note datum-pool-empty__state datum-pool-finds__more" data-datum-finds-more hidden>Loading older finds…</p>' +
+    "</div>"
+  );
 }
 
 function datumPoolMinersToggleHtml(view) {
@@ -2575,9 +2670,12 @@ function paintDatumPoolMinersView(pool) {
   const view = datumPoolMinersView === "history" ? "history" : "window";
   const prevH = body.offsetHeight;
   if (prevH) body.style.minHeight = prevH + "px";
+  if (view !== "history") stopDatumPoolFindsLazy();
+  resetDatumPoolFindsProgress();
   body.innerHTML = view === "history"
     ? datumPoolFindsHtml(pool, lastFindsDoc)
     : datumPoolMinersTableHtml(datumPoolMiners(pool));
+  if (view === "history") ensureDatumPoolFindsLazy(host);
   requestAnimationFrame(function () {
     body.style.minHeight = "";
   });
@@ -2587,9 +2685,15 @@ function syncDatumPoolBoard(pool, emptyDoc, findsDoc) {
   const host = document.getElementById("datumPoolBoard");
   if (!host) return;
   if (datumPoolUsable(pool)) mergeMetricPoint("pool", poolMetricPoint(pool));
+  const held = shouldHoldDom(host);
   withLiveView(host, function () {
     host.innerHTML = datumPoolBoardHtml(pool, emptyDoc, findsDoc);
   });
+  if (datumPoolMinersView === "history") ensureDatumPoolFindsLazy(host);
+  else {
+    stopDatumPoolFindsLazy();
+    if (!held) resetDatumPoolFindsProgress();
+  }
   paintMetricCharts(host);
 }
 
@@ -5983,10 +6087,7 @@ function renderPeerCensusPeers(nodes) {
         "<td>" +
         escapeHtml(peerCensusAddressLabel(node.address_type)) +
         "</td>" +
-        "<td>" +
-        escapeHtml(node.start_height == null ? "—" : formatNumber(node.start_height)) +
-        "</td>" +
-        "<td><button type=\"button\" class=\"datum-pool-copy peer-census-peers-copy\" data-copy=\"" +
+        "<td><button type=\"button\" class=\"datum-pool-copy viewer-peer-copy peer-census-peers-copy\" data-copy=\"" +
         escapeHtml(line).replace(/"/g, "&quot;") +
         "\" title=\"Copy bitcoin.conf line\" aria-label=\"Copy " +
         escapeHtml(line).replace(/"/g, "&quot;") +

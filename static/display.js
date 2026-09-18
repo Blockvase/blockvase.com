@@ -7,6 +7,7 @@ let hasApClientConnected = false;
 let isTransitioning = false;
 let mempoolTxIds = new Set();
 let lastMempoolTxs = [];
+let lastReportedMempoolTx = 0;
 let mempoolPollInFlight = false;
 let historicalBlockActive = false;
 let mempoolAnimationStarted = false;
@@ -1019,6 +1020,16 @@ async function pollMempool() {
     const simulatedBlockFound = Boolean(d.simulated_block);
     let blockFound = networkBlockFound || simulatedBlockFound || minerBlockFound;
     let confirmationVariant = minerBlockFound ? "miner" : "network";
+    const fullFlush = previousTxIds.size > 0 && txs.length === 0;
+    const reportedMempoolTx = Number(d.mempool_tx);
+    const reportedHasTxs = Number.isFinite(reportedMempoolTx) && reportedMempoolTx > 0;
+    if (Number.isFinite(reportedMempoolTx)) lastReportedMempoolTx = reportedMempoolTx;
+    const previousTxs = lastMempoolTxs;
+
+    if (!blockFound && fullFlush) {
+      // Height can lag the mempool wipe by a poll. A full clear is the found block.
+      blockFound = true;
+    }
 
     if (minerBlockFound) {
       // If the local miner reports a block before Knots advances height, the next
@@ -1027,14 +1038,38 @@ async function pollMempool() {
     } else if (networkBlockFound && suppressNextNetworkConfirmation) {
       blockFound = simulatedBlockFound;
       suppressNextNetworkConfirmation = false;
+    } else if (fullFlush && !networkBlockFound) {
+      suppressNextNetworkConfirmation = true;
     }
-    if (networkBlockFound && blockFound) lastAnimatedBlockHeight = blockHeight;
 
     if (historicalBlockActive) return;
     if (blockHeight != null) previousBlockHeight = blockHeight;
+
+    if (blockFound) {
+      const scene = container ? getMempoolScene(container) : null;
+      const canCelebrate = !!(scene && scene.blocks && scene.blocks.size);
+      hideMempoolMessage(container);
+      if (canCelebrate) {
+        if (networkBlockFound) lastAnimatedBlockHeight = blockHeight;
+        renderMempoolTreemap(container, txs, true, { confirmationVariant });
+        lastMempoolTxs = txs;
+        mempoolAnimationStarted = true;
+        kioskMempoolEmptyConfirmed = false;
+        void updateSyncOverlay();
+        return;
+      }
+    }
+
     lastMempoolTxs = txs;
 
     if (txs.length === 0) {
+      if (reportedHasTxs || (previousTxs && previousTxs.length)) {
+        if (container && !hasUsableMempoolAnimation()) {
+          showMempoolMessage(container, "Loading mempool data...");
+        }
+        void updateSyncOverlay();
+        return;
+      }
       if (isDisplayKiosk()) kioskMempoolEmptyConfirmed = true;
       if (container) showMempoolMessage(container, "Mempool empty");
       void updateSyncOverlay();
@@ -1201,25 +1236,28 @@ class CanvasMempoolScene {
   }
 
   setTransactions(txs, options = {}) {
-    if (!Array.isArray(txs) || txs.length === 0) return;
-    this.lastTxs = txs;
+    const list = Array.isArray(txs) ? txs : [];
+    if (!list.length && !(options.blockFound && this.blocks.size)) return;
+    if (list.length) this.lastTxs = list;
     this.container.querySelectorAll(".mempool-empty").forEach((el) => el.remove());
     if (options.blockFound && !options.forceNewBlocks) {
       const nowDate = Date.now();
       if (nowDate - lastCelebrationAt >= CONFIRM_CELEBRATION_COOLDOWN_MS) {
-        const started = this.triggerConfirmation(txs, options.confirmationVariant || "network");
-        if (!started) return;
-        lastCelebrationAt = nowDate;
-        try {
-          blockvaseBroadcast?.postMessage({
-            type: options.confirmationVariant === "miner" ? "miner-block-confirmed" : "block-confirmed",
-            source: blockvaseBcInstanceId,
-          });
-        } catch (_) {}
-        return;
+        const started = this.triggerConfirmation(list, options.confirmationVariant || "network");
+        if (started) {
+          lastCelebrationAt = nowDate;
+          try {
+            blockvaseBroadcast?.postMessage({
+              type: options.confirmationVariant === "miner" ? "miner-block-confirmed" : "block-confirmed",
+              source: blockvaseBcInstanceId,
+            });
+          } catch (_) {}
+          return;
+        }
       }
     }
-    if (!this.confirmationBusy || options.forceNewBlocks) this.applyLayout(txs, options);
+    if (!list.length) return;
+    if (!this.confirmationBusy || options.forceNewBlocks) this.applyLayout(list, options);
   }
 
   applyLayout(txs, options = {}) {
@@ -1331,8 +1369,9 @@ class CanvasMempoolScene {
   }
 
   triggerConfirmation(txs, variant = "network") {
-    const rebuildTxs = Array.isArray(txs) && txs.length > 0 ? txs : lastMempoolTxs;
-    if (!rebuildTxs.length || this.confirmationBusy) return false;
+    const rebuildTxs = Array.isArray(txs) ? txs : [];
+    if (this.confirmationBusy) return false;
+    if (!this.blocks.size && !rebuildTxs.length) return false;
     clearConfirmationCleanupTimers();
     if (confirmFlashTimer) clearTimeout(confirmFlashTimer);
     if (minerConfirmationTimer) clearInterval(minerConfirmationTimer);
@@ -1398,7 +1437,18 @@ class CanvasMempoolScene {
     this.blocks.clear();
     this.confirmationBusy = false;
     confirmationRebuildInProgress = false;
-    this.applyLayout(txs, { forceNewBlocks: true, confirmationVariant: variant });
+    const next = Array.isArray(txs) ? txs : [];
+    lastMempoolTxs = next;
+    this.lastTxs = next;
+    if (!next.length) {
+      showMempoolMessage(
+        this.container,
+        lastReportedMempoolTx > 0 ? "Loading mempool data..." : "Mempool empty"
+      );
+      return;
+    }
+    hideMempoolMessage(this.container);
+    this.applyLayout(next, { forceNewBlocks: true, confirmationVariant: variant });
   }
 
   draw(rawTs) {
@@ -1733,9 +1783,11 @@ function showMempoolMessage(container, message) {
 }
 
 function renderMempoolTreemap(container, txs, blockFound, options = {}) {
-  if (!container || !txs.length) return;
+  if (!container) return;
+  const list = Array.isArray(txs) ? txs : [];
+  if (!list.length && !blockFound) return;
   const scene = getMempoolScene(container);
-  scene.setTransactions(txs, { ...options, blockFound });
+  scene.setTransactions(list, { ...options, blockFound });
 }
 
 function triggerBlockConfirmation(container, txs, variant = "network") {

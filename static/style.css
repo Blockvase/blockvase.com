@@ -1878,7 +1878,9 @@ body.portal-page .datum-pool-footer {
 body.portal-page .datum-pool-progress,
 body.portal-page .datum-pool-connect,
 body.portal-page .datum-pool-miners,
-body.portal-page .datum-pool-empty {
+body.portal-page .datum-pool-empty,
+body.portal-page .datum-pool-finds,
+body.portal-page .datum-pool-finds__list {
   display: flex;
   flex-direction: column;
   gap: var(--portal-space-3);
@@ -10147,12 +10149,12 @@ body.portal-page .peer-census-peers-title {
 }
 
 body.portal-page .peer-census-peers-note {
-  margin: 6px 0 0;
+  margin: 4px 0 0;
   color: var(--muted);
-  font-size: var(--portal-text-body);
+  font-size: var(--portal-text-caption);
   font-weight: 400;
   letter-spacing: 0;
-  line-height: 1.45;
+  line-height: 1.35;
 }
 
 body.portal-page .peer-census-peers-note code {
@@ -10180,13 +10182,10 @@ body.portal-page .peer-census-peers-copyall.is-copied {
   color: #ffffff;
 }
 
-body.portal-page .peer-census-peers-table .datum-pool-copy {
+body.portal-page .peer-census-peers-table .viewer-peer-copy {
   display: inline-flex;
-  align-items: center;
   width: auto;
   max-width: 100%;
-  padding: 3px 10px;
-  min-height: 0;
 }
 
 body.portal-page .peer-census-peers-table .datum-pool-copy__value {
@@ -10210,7 +10209,7 @@ body.portal-page .peer-census-peers-table {
 
 body.portal-page .peer-census-peers-table th,
 body.portal-page .peer-census-peers-table td {
-  padding: 8px 12px 8px 0;
+  padding: 4px 10px 4px 0;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 28%, transparent);
   text-align: left;
   vertical-align: middle;
@@ -10227,8 +10226,8 @@ body.portal-page .peer-census-peers-table th {
 }
 
 body.portal-page .peer-census-peers-table td {
-  font-size: var(--portal-text-body);
-  line-height: 1.45;
+  font-size: var(--portal-text-caption);
+  line-height: 1.3;
 }
 
 body.portal-page .peer-census-peers-table tbody tr {
