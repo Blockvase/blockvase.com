@@ -4243,8 +4243,9 @@ body.portal-page .block-carousel__item--mined.is-selected .block-carousel__tag--
 body.portal-page .block-carousel__item--mined.is-loading .block-carousel__tag--coinbase,
 body.portal-page .block-carousel__item--mined.is-selected .block-carousel__tag--search,
 body.portal-page .block-carousel__item--mined.is-loading .block-carousel__tag--search {
-  border-color: #6b5e50;
-  color: #3d342c;
+  background: color-mix(in srgb, #1a1208 8%, #ffffff);
+  border-color: color-mix(in srgb, #1a1208 16%, transparent);
+  color: color-mix(in srgb, #1a1208 52%, #ffffff);
 }
 
 body.portal-page .block-carousel__tag--copy {
@@ -8235,8 +8236,7 @@ body.portal-page[data-bw] .pool-share-stack.is-hovering .pool-share-stack__seg.i
 }
 
 .pool-share-stack.is-hovering .pool-share-stack__seg.is-hot {
-  outline: 1px solid var(--text);
-  outline-offset: -1px;
+  outline: none;
   filter: brightness(1.12);
 }
 
@@ -8327,22 +8327,43 @@ body.portal-page[data-bw] .pool-share-stack.is-hovering .pool-share-stack__seg.i
 .pool-share-row {
   display: grid;
   grid-template-columns: minmax(6.5rem, 11rem) minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name bar meta"
+    "finds finds finds";
   gap: 8px;
   align-items: center;
   cursor: default;
 }
 
 .pool-share-name {
+  grid-area: name;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  background: transparent;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font: inherit;
   font-size: var(--portal-text-caption);
   font-weight: 600;
   color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pool-share-name:hover,
+.pool-share-row.is-open .pool-share-name {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .pool-share-track {
+  grid-area: bar;
   display: block;
 }
 
@@ -8352,10 +8373,83 @@ body.portal-page[data-bw] .pool-share-stack.is-hovering .pool-share-stack__seg.i
 }
 
 .pool-share-meta {
+  grid-area: meta;
   font-size: var(--portal-text-caption);
   font-variant-numeric: tabular-nums;
   color: var(--muted);
   white-space: nowrap;
+}
+
+.pool-share-finds {
+  grid-area: finds;
+  min-width: 0;
+}
+
+.pool-share-finds[hidden] {
+  display: none;
+}
+
+.pool-share-finds__empty {
+  margin: 0;
+  padding: 2px 0 4px;
+  font-size: var(--portal-text-caption);
+}
+
+.pool-share-finds__track {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overflow-anchor: none;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+  padding: 4px 2px 8px;
+}
+
+body.portal-page .pool-share-finds__track .block-carousel__item,
+body.portal-page .pool-share-find {
+  flex: 0 0 108px;
+  width: 108px;
+  min-width: 108px;
+  min-height: 0;
+  margin-right: 12px;
+  padding: 8px 10px;
+  gap: 4px;
+}
+
+body.portal-page .pool-share-finds__track .block-carousel__item::after {
+  width: 12px;
+}
+
+body.portal-page .pool-share-find,
+body.portal-page .pool-share-finds__track .block-carousel__item,
+body.portal-page .pool-share-finds__track .block-carousel__height {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+body.portal-page .pool-share-finds__track .block-carousel__height {
+  font-size: var(--portal-text-caption);
+  cursor: text;
+}
+
+body.portal-page .block-carousel .pool-share-finds ::selection,
+body.portal-page .pool-share-finds ::selection {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: inherit;
+}
+
+@media (max-width: 700px) {
+  body.portal-page .pool-share-finds__track .block-carousel__item,
+  body.portal-page .pool-share-find {
+    flex-basis: 108px;
+    width: 108px;
+    min-height: 0;
+  }
 }
 
 .pool-share-empty {
@@ -8367,19 +8461,8 @@ body.portal-page[data-bw] .pool-share-stack.is-hovering .pool-share-stack__seg.i
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
       "name meta"
-      "bar bar";
-  }
-
-  .pool-share-name {
-    grid-area: name;
-  }
-
-  .pool-share-meta {
-    grid-area: meta;
-  }
-
-  .pool-share-track {
-    grid-area: bar;
+      "bar bar"
+      "finds finds";
   }
 }
 
@@ -9362,6 +9445,15 @@ body.portal-page .block-carousel__tag--search,
 body.portal-page .block-carousel__badge {
   border: none;
   background: var(--panel-light);
+  color: var(--muted);
+}
+
+body.portal-page .block-carousel__item--mined.is-selected .block-carousel__tag--coinbase,
+body.portal-page .block-carousel__item--mined.is-loading .block-carousel__tag--coinbase,
+body.portal-page .block-carousel__item--mined.is-selected .block-carousel__tag--search,
+body.portal-page .block-carousel__item--mined.is-loading .block-carousel__tag--search {
+  background: color-mix(in srgb, var(--muted) 16%, var(--panel-field));
+  border: none;
   color: var(--muted);
 }
 

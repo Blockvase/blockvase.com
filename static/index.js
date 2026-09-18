@@ -205,6 +205,36 @@ function withOverflowScroll(root, fn) {
   return result;
 }
 
+let viewHoldPointer = null;
+
+function rememberViewHoldPointer(target) {
+  viewHoldPointer = target && target.nodeType === 1 ? target : (target && target.parentElement) || null;
+}
+
+function hasLiveSelectionIn(root) {
+  const sel = window.getSelection && window.getSelection();
+  if (!root || !sel || sel.isCollapsed || !sel.rangeCount) return false;
+  if (!String(sel.toString() || "").replace(/\s+/g, "")) return false;
+  try {
+    const node = sel.getRangeAt(0).commonAncestorContainer;
+    const el = node.nodeType === 1 ? node : node.parentElement;
+    return !!(el && root.contains(el));
+  } catch (_) {
+    return false;
+  }
+}
+
+function shouldHoldDom(root) {
+  if (!root) return false;
+  if (hasLiveSelectionIn(root)) return true;
+  return !!(viewHoldPointer && root.contains(viewHoldPointer));
+}
+
+function withLiveView(root, fn) {
+  if (shouldHoldDom(root)) return;
+  return withOverflowScroll(root, fn);
+}
+
 function formatMetricsAsOf(value) {
   let d;
   if (value == null || value === "") {
@@ -833,6 +863,7 @@ function poolShareListHtml(share, view) {
   if (!rows.length) {
     return '<p class="pool-share-empty muted-note">No pool share in the latest node poll.</p>';
   }
+  const hint = view === "tag" ? "Show blocks with this tag" : "Show blocks found by this pool";
   return (
     '<ol class="pool-share-bars" aria-label="' +
     (view === "tag" ? "Share by coinbase tag" : "Share by pool") +
@@ -842,15 +873,20 @@ function poolShareListHtml(share, view) {
         const pct = Number(row.pct);
         const width = Number.isFinite(pct) ? Math.max(0, Math.min(100, pct)) : 0;
         const label = row.key;
+        const open = poolShareKey(poolShareExpandedKey).toLowerCase() === poolShareKey(label).toLowerCase();
         return (
-          '<li class="pool-share-row" data-pool-share-key="' +
+          '<li class="pool-share-row' +
+          (open ? " is-open" : "") +
+          '" data-pool-share-key="' +
           escapeHtml(label) +
           '">' +
-          '<span class="pool-share-name" title="' +
-          escapeHtml(label) +
+          '<button type="button" class="pool-share-name" title="' +
+          escapeHtml(hint) +
+          '" aria-expanded="' +
+          (open ? "true" : "false") +
           '">' +
           escapeHtml(label) +
-          "</span>" +
+          "</button>" +
           '<span class="pool-share-track">' +
           '<span class="pool-share-fill" style="width:' +
           width +
@@ -859,7 +895,10 @@ function poolShareListHtml(share, view) {
           escapeHtml(formatNumber(row.blocks)) +
           " · " +
           escapeHtml(formatPoolSharePct(row.pct)) +
-          "</span></li>"
+          "</span>" +
+          '<div class="pool-share-finds"' +
+          (open ? "" : " hidden") +
+          "></div></li>"
         );
       })
       .join("") +
@@ -947,6 +986,9 @@ function syncPoolShareBoard(share) {
     const retarget = host.querySelector(".pool-share-retarget");
     if (retarget) retarget.insertAdjacentHTML("beforebegin", html);
     else host.insertAdjacentHTML("beforeend", html);
+    restorePoolShareExpandedRow();
+    bindPoolShareBoard(host.querySelector(".metric-board--pool-share"));
+    poolShareApplyHot(host.querySelector(".metric-board--pool-share"));
     return;
   }
   const tmp = document.createElement("div");
@@ -965,8 +1007,9 @@ function syncPoolShareBoard(share) {
   const body = existing.querySelector(".pool-share-body");
   const nextBody = next.querySelector(".pool-share-body");
   if (body && nextBody) {
-    withOverflowScroll(body, function () {
+    withLiveView(body, function () {
       body.innerHTML = nextBody.innerHTML;
+      restorePoolShareExpandedRow();
     });
   }
   const top = existing.querySelector(".pool-share-summary-top");
@@ -981,6 +1024,316 @@ function syncPoolShareBoard(share) {
   if (stack && nextStack) stack.replaceWith(nextStack);
   else if (!stack && nextStack && summary) summary.appendChild(nextStack);
   else if (stack && !nextStack) stack.remove();
+  bindPoolShareBoard(existing);
+  poolShareApplyHot(existing);
+}
+
+function poolShareWindowCacheKey(share) {
+  if (!share || typeof share !== "object") return "";
+  return [share.start_height || "", share.end_height || "", share.window || ""].join("|");
+}
+
+function poolShareWindowBounds(share) {
+  const start = Number(share && share.start_height);
+  const end = Number(share && share.end_height);
+  return {
+    start: Number.isFinite(start) && start > 0 ? start : 0,
+    end: Number.isFinite(end) && end > 0 ? end : 0,
+  };
+}
+
+function poolShareBlockInWindow(height, share) {
+  const h = Number(height) || 0;
+  if (!h) return false;
+  const bounds = poolShareWindowBounds(share);
+  if (bounds.start && h < bounds.start) return false;
+  if (bounds.end && h > bounds.end) return false;
+  return true;
+}
+
+function poolShareNormalizeBlock(block) {
+  const height = Number(block && block.height) || 0;
+  if (!height) return null;
+  const labels = blockLabelFromSource(block);
+  return {
+    height: height,
+    hash: block.hash || block.id || "",
+    timestamp: Number(block.timestamp || block.time) || 0,
+    tx_count: Number(block.tx_count || block.nTx) || 0,
+    size: Number(block.size) || 0,
+    pool: labels.pool || block.pool || "",
+    coinbase_tag: labels.coinbase || block.coinbase_tag || block.coinbase || "",
+  };
+}
+
+function poolShareWindowBlocksFromCarousel(share) {
+  const out = [];
+  (blockCarouselState.items || []).forEach(function (item) {
+    if (!item || item.mining || !poolShareBlockInWindow(item.height, share)) return;
+    const normalized = poolShareNormalizeBlock({
+      height: item.height,
+      hash: item.hash,
+      timestamp: item.timestamp,
+      tx_count: item.txCount,
+      size: item.size,
+      pool: item.pool,
+      coinbase_tag: item.coinbase,
+    });
+    if (normalized) out.push(normalized);
+  });
+  return out;
+}
+
+function poolShareBlockMatches(block, key, view) {
+  const want = poolShareKey(key).toLowerCase();
+  if (!want || !block) return false;
+  const labels = blockLabelFromSource(block);
+  const value = view === "tag" ? (labels.coinbase || block.coinbase_tag || "") : (labels.pool || block.pool || "");
+  const aliased = aliasPoolShareKey(value).toLowerCase();
+  const raw = String(value || "").trim().toLowerCase();
+  return aliased === want || raw === want;
+}
+
+function poolShareFindsHtml(blocks) {
+  if (!blocks.length) {
+    return '<p class="pool-share-finds__empty muted-note">No labeled blocks in this window yet.</p>';
+  }
+  const selected = String(blockCarouselState.selected || "");
+  return (
+    '<div class="pool-share-finds__track" role="list">' +
+    blocks
+      .map(function (block) {
+        const time = block.timestamp ? formatTimeAgo(block.timestamp) : "";
+        const txs = Number(block.tx_count) || 0;
+        const key = String(block.height);
+        return (
+          '<button type="button" class="pool-share-find block-carousel__item block-carousel__item--mined' +
+          (selected === key ? " is-selected" : "") +
+          '" role="listitem" data-key="' +
+          escapeHtml(key) +
+          '" data-height="' +
+          escapeHtml(key) +
+          '"' +
+          (block.hash ? ' data-hash="' + escapeHtml(block.hash) + '"' : "") +
+          ">" +
+          '<span class="block-carousel__height">#' +
+          formatNumber(block.height) +
+          "</span>" +
+          '<span class="block-carousel__meta">' +
+          (time ? "<span>" + escapeHtml(time) + "</span>" : "") +
+          "</span>" +
+          '<span class="block-carousel__stats">' +
+          (txs ? "<span>" + escapeHtml(formatNumber(txs)) + " tx</span>" : "") +
+          "</span></button>"
+        );
+      })
+      .join("") +
+    "</div>"
+  );
+}
+
+function syncPoolShareFindSelection() {
+  const key = String(blockCarouselState.selected || "");
+  document.querySelectorAll(".pool-share-find").forEach(function (el) {
+    el.classList.toggle("is-selected", el.getAttribute("data-height") === key);
+  });
+}
+
+function mergePoolShareWindowBlocks(share, incoming) {
+  const byHeight = {};
+  poolShareWindowBlocksFromCarousel(share).forEach(function (block) {
+    byHeight[block.height] = block;
+  });
+  (incoming || []).forEach(function (raw) {
+    if (!poolShareBlockInWindow(raw && raw.height, share)) return;
+    const block = poolShareNormalizeBlock(raw);
+    if (!block) return;
+    const prev = byHeight[block.height];
+    byHeight[block.height] = prev
+      ? {
+        height: block.height,
+        hash: block.hash || prev.hash,
+        timestamp: block.timestamp || prev.timestamp,
+        tx_count: block.tx_count || prev.tx_count,
+        size: block.size || prev.size,
+        pool: block.pool || prev.pool,
+        coinbase_tag: block.coinbase_tag || prev.coinbase_tag,
+      }
+      : block;
+  });
+  return Object.keys(byHeight)
+    .map(function (height) { return byHeight[height]; })
+    .sort(function (a, b) { return (Number(b.height) || 0) - (Number(a.height) || 0); });
+}
+
+function loadPoolShareWindowBlocks(share) {
+  const key = poolShareWindowCacheKey(share);
+  if (!key) return Promise.resolve([]);
+  if (poolShareFindsCache.key === key && poolShareFindsCache.blocks) {
+    return Promise.resolve(poolShareFindsCache.blocks);
+  }
+  if (poolShareFindsCache.key === key && poolShareFindsCache.promise) {
+    return poolShareFindsCache.promise;
+  }
+  const bounds = poolShareWindowBounds(share);
+  const windowSize = Number(share.window) || 120;
+  const limit = Math.min(120, Math.max(1, windowSize));
+  const before = bounds.end ? String(bounds.end + 1) : "";
+  const url = "/recent-blocks?limit=" + limit + (before ? "&before=" + encodeURIComponent(before) : "");
+  const promise = blockvaseFetchWithTimeout(url, 8000)
+    .then(function (response) { return response.json(); })
+    .then(function (data) {
+      const blocks = mergePoolShareWindowBlocks(share, Array.isArray(data.blocks) ? data.blocks : []);
+      poolShareFindsCache = { key: key, blocks: blocks, promise: null };
+      return blocks;
+    })
+    .catch(function (err) {
+      if (poolShareFindsCache.promise === promise) poolShareFindsCache.promise = null;
+      throw err;
+    });
+  poolShareFindsCache = {
+    key: key,
+    blocks: poolShareFindsCache.key === key ? poolShareFindsCache.blocks : null,
+    promise: promise,
+  };
+  return promise;
+}
+
+function setPoolShareRowOpen(row, open) {
+  if (!row) return;
+  row.classList.toggle("is-open", !!open);
+  const name = row.querySelector(".pool-share-name");
+  if (name) name.setAttribute("aria-expanded", open ? "true" : "false");
+  const host = row.querySelector(".pool-share-finds");
+  if (host) host.hidden = !open;
+}
+
+function collapsePoolShareRows(exceptRow) {
+  document.querySelectorAll(".metric-board--pool-share .pool-share-row.is-open").forEach(function (row) {
+    if (exceptRow && row === exceptRow) return;
+    setPoolShareRowOpen(row, false);
+  });
+}
+
+function fillPoolShareFinds(row, key) {
+  const host = row && row.querySelector(".pool-share-finds");
+  if (!host || !lastPoolShare) return;
+  const view = poolShareView === "tag" ? "tag" : "pool";
+  const match = function (block) { return poolShareBlockMatches(block, key, view); };
+  const cached = poolShareFindsCache.key === poolShareWindowCacheKey(lastPoolShare) && poolShareFindsCache.blocks;
+  host.hidden = false;
+  if (shouldHoldDom(host)) return;
+  if (cached) {
+    host.innerHTML = poolShareFindsHtml(cached.filter(match));
+    return;
+  }
+  const preview = mergePoolShareWindowBlocks(lastPoolShare, []).filter(match);
+  host.innerHTML = preview.length
+    ? poolShareFindsHtml(preview)
+    : '<p class="pool-share-finds__empty muted-note">Loading…</p>';
+  loadPoolShareWindowBlocks(lastPoolShare)
+    .then(function (blocks) {
+      if (poolShareExpandedKey !== key || !row.isConnected) return;
+      if (shouldHoldDom(host)) return;
+      host.innerHTML = poolShareFindsHtml(blocks.filter(match));
+    })
+    .catch(function () {
+      if (poolShareExpandedKey !== key || !row.isConnected) return;
+      if (preview.length) return;
+      host.innerHTML = '<p class="pool-share-finds__empty muted-note">Could not load those blocks.</p>';
+    });
+}
+
+function expandPoolShareRow(row) {
+  if (!row) return;
+  const key = poolShareKey(row.getAttribute("data-pool-share-key"));
+  if (!key) return;
+  collapsePoolShareRows(row);
+  poolShareExpandedKey = key;
+  setPoolShareRowOpen(row, true);
+  const board = row.closest(".metric-board--pool-share");
+  if (board) poolShareApplyHot(board);
+  fillPoolShareFinds(row, key);
+}
+
+function restorePoolShareExpandedRow() {
+  const board = document.querySelector(".metric-board--pool-share");
+  if (!board || !poolShareExpandedKey) return;
+  const want = poolShareKey(poolShareExpandedKey).toLowerCase();
+  let row = null;
+  board.querySelectorAll(".pool-share-row").forEach(function (el) {
+    if (poolShareKey(el.getAttribute("data-pool-share-key")).toLowerCase() === want) row = el;
+  });
+  if (!row) {
+    poolShareExpandedKey = "";
+    return;
+  }
+  expandPoolShareRow(row);
+}
+
+function togglePoolShareFinds(nameBtn) {
+  const row = nameBtn && nameBtn.closest(".pool-share-row");
+  if (!row) return;
+  const key = poolShareKey(row.getAttribute("data-pool-share-key"));
+  if (row.classList.contains("is-open") && poolShareKey(poolShareExpandedKey).toLowerCase() === key.toLowerCase()) {
+    poolShareExpandedKey = "";
+    setPoolShareRowOpen(row, false);
+    const board = row.closest(".metric-board--pool-share");
+    if (board) poolShareMarkHot(board, "");
+    return;
+  }
+  expandPoolShareRow(row);
+}
+
+function poolShareFindSelectionIn(btn) {
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return false;
+  if (!String(sel.toString() || "").trim()) return false;
+  try {
+    const node = sel.getRangeAt(0).commonAncestorContainer;
+    const el = node.nodeType === 1 ? node : node.parentElement;
+    return !!(el && btn && btn.contains(el));
+  } catch (_) {
+    return false;
+  }
+}
+
+function selectPoolShareFindHeight(btn) {
+  const height = btn && btn.querySelector(".block-carousel__height");
+  if (!height) return;
+  const range = document.createRange();
+  range.selectNodeContents(height);
+  const sel = window.getSelection();
+  if (!sel) return;
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+function cancelOpenPoolShareFind() {
+  if (!openPoolShareFind._timer) return;
+  clearTimeout(openPoolShareFind._timer);
+  openPoolShareFind._timer = 0;
+}
+
+function scheduleOpenPoolShareFind(btn) {
+  cancelOpenPoolShareFind();
+  openPoolShareFind._timer = setTimeout(function () {
+    openPoolShareFind._timer = 0;
+    if (poolShareFindSelectionIn(btn)) return;
+    openPoolShareFind(btn);
+  }, 280);
+}
+
+function openPoolShareFind(btn) {
+  const height = Number(btn && btn.getAttribute("data-height"));
+  const hash = (btn && btn.getAttribute("data-hash")) || "";
+  if (!Number.isFinite(height) || height <= 0) return;
+  const cached = (poolShareFindsCache.blocks || []).find(function (block) {
+    return Number(block.height) === height;
+  });
+  ensureCarouselRangeForHeight(height, hash || (cached && cached.hash) || "");
+  if (cached) applyCarouselBlockMeta(cached);
+  selectBlockCarouselItem(String(height), { hydrateNeighbors: true });
 }
 
 function poolShareMarkHot(board, key) {
@@ -994,18 +1347,69 @@ function poolShareMarkHot(board, key) {
   if (stack) stack.classList.toggle("is-hovering", !!want);
 }
 
+function poolShareApplyHot(board) {
+  if (!board) return;
+  poolShareMarkHot(board, board.open ? poolShareExpandedKey : "");
+}
+
+function poolShareSyncOpen(board) {
+  if (!board) return;
+  poolShareOpen = !!board.open;
+  poolShareApplyHot(board);
+}
+
+function bindPoolShareBoard(board) {
+  if (!board || board._poolShareHotBound) return;
+  board._poolShareHotBound = true;
+  board.addEventListener("toggle", function () {
+    poolShareSyncOpen(board);
+  });
+  new MutationObserver(function () {
+    poolShareSyncOpen(board);
+  }).observe(board, { attributes: true, attributeFilter: ["open"] });
+}
+
 function initPoolShareChart() {
   const host = document.getElementById("metrics");
   if (!host || host._poolShareBound) return;
   host._poolShareBound = true;
-  host.addEventListener("toggle", function (e) {
-    const board = e.target;
-    if (!board || !board.classList || !board.classList.contains("metric-board--pool-share")) return;
-    if (!board.isConnected) return;
-    poolShareOpen = !!board.open;
-    if (!board.open) poolShareMarkHot(board, "");
+  host.addEventListener(
+    "toggle",
+    function (e) {
+      const board = e.target;
+      if (!board || !board.classList || !board.classList.contains("metric-board--pool-share")) return;
+      if (!board.isConnected) return;
+      poolShareSyncOpen(board);
+    },
+    true
+  );
+  host.addEventListener("pointerdown", function (e) {
+    const findBtn = e.target.closest(".pool-share-find");
+    if (!findBtn || !host.contains(findBtn)) return;
+    poolShareFindPointer = { x: e.clientX, y: e.clientY, moved: false };
+  });
+  host.addEventListener("pointermove", function (e) {
+    if (!poolShareFindPointer || poolShareFindPointer.moved) return;
+    const dx = e.clientX - poolShareFindPointer.x;
+    const dy = e.clientY - poolShareFindPointer.y;
+    if (dx * dx + dy * dy > 25) poolShareFindPointer.moved = true;
+  });
+  host.addEventListener("dblclick", function (e) {
+    const findBtn = e.target.closest(".pool-share-find");
+    if (!findBtn || !host.contains(findBtn)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    cancelOpenPoolShareFind();
+    selectPoolShareFindHeight(findBtn);
   });
   host.addEventListener("click", function (e) {
+    const summary = e.target.closest(".pool-share-summary");
+    if (summary && host.contains(summary)) {
+      const board = summary.closest(".metric-board--pool-share");
+      queueMicrotask(function () {
+        poolShareSyncOpen(board);
+      });
+    }
     const retargetClick = e.target.closest(".pool-share-retarget");
     if (retargetClick && host.contains(retargetClick)) {
       e.preventDefault();
@@ -1017,6 +1421,33 @@ function initPoolShareChart() {
       e.preventDefault();
       e.stopPropagation();
     }
+    const findBtn = e.target.closest(".pool-share-find");
+    if (findBtn && host.contains(findBtn)) {
+      e.stopPropagation();
+      if (
+        e.detail > 1 ||
+        poolShareFindSelectionIn(findBtn) ||
+        (poolShareFindPointer && poolShareFindPointer.moved)
+      ) {
+        e.preventDefault();
+        cancelOpenPoolShareFind();
+        return;
+      }
+      e.preventDefault();
+      if (e.target.closest(".block-carousel__height")) {
+        scheduleOpenPoolShareFind(findBtn);
+        return;
+      }
+      openPoolShareFind(findBtn);
+      return;
+    }
+    const nameBtn = e.target.closest(".pool-share-name");
+    if (nameBtn && host.contains(nameBtn)) {
+      e.preventDefault();
+      e.stopPropagation();
+      togglePoolShareFinds(nameBtn);
+      return;
+    }
     const btn = e.target.closest("[data-pool-share-view]");
     if (!btn || !host.contains(btn)) return;
     e.preventDefault();
@@ -1024,6 +1455,7 @@ function initPoolShareChart() {
     const next = btn.getAttribute("data-pool-share-view") === "tag" ? "tag" : "pool";
     if (next === poolShareView) return;
     poolShareView = next;
+    poolShareExpandedKey = "";
     if (!lastPoolShare) return;
     syncPoolShareBoard(lastPoolShare);
   });
@@ -1034,6 +1466,10 @@ function initPoolShareChart() {
     if (from && row.contains(from)) return;
     const board = row.closest(".metric-board--pool-share");
     if (!board || !board.open) return;
+    if (poolShareExpandedKey) {
+      poolShareApplyHot(board);
+      return;
+    }
     poolShareMarkHot(board, row.getAttribute("data-pool-share-key"));
   });
   host.addEventListener("pointerout", function (e) {
@@ -1043,7 +1479,7 @@ function initPoolShareChart() {
     if (next && row.contains(next)) return;
     if (next && next.closest && next.closest(".pool-share-row")) return;
     const board = row.closest(".metric-board--pool-share");
-    if (board) poolShareMarkHot(board, "");
+    if (board) poolShareApplyHot(board);
   });
 }
 
@@ -1105,6 +1541,9 @@ let lastDatumPool = null;
 let datumPoolLoadSettled = false;
 let poolShareView = "pool";
 let poolShareOpen = false;
+let poolShareExpandedKey = "";
+let poolShareFindsCache = { key: "", blocks: null, promise: null };
+let poolShareFindPointer = null;
 const DATUM_POOL_NOTE =
   "Do not point public ASIC firmware at the DATUM port.";
 const DATUM_POOL_SOURCE_FALLBACK = "http://pool.blockvase.com:28916/";
@@ -1960,7 +2399,7 @@ function syncDatumPoolBoard(pool, emptyDoc) {
   const host = document.getElementById("datumPoolBoard");
   if (!host) return;
   if (datumPoolUsable(pool)) mergeMetricPoint("pool", poolMetricPoint(pool));
-  withOverflowScroll(host, function () {
+  withLiveView(host, function () {
     host.innerHTML = datumPoolBoardHtml(pool, emptyDoc);
   });
   paintMetricCharts(host);
@@ -2300,7 +2739,7 @@ function syncLightningBoard(lightning) {
   const host = document.getElementById("lightningBoard");
   if (!host) return;
   if (lightningUsable(lightning)) mergeMetricPoint("lightning", lightningMetricPoint(lightning));
-  withOverflowScroll(host, function () {
+  withLiveView(host, function () {
     host.innerHTML = lightningBoardHtml(lightning);
   });
   paintMetricCharts(host);
@@ -3013,6 +3452,10 @@ function paintCarouselTrack(track, keepLeft) {
       }
     }
   }
+  if (shouldHoldDom(track)) {
+    restoreCarouselScroll(track, keepLeft || 0, anchor);
+    return;
+  }
   if (same) {
     for (let i = 0; i < slice.length; i++) {
       const tmp = document.createElement("div");
@@ -3456,6 +3899,7 @@ function renderBlockCarouselRefresh() {
   const track = document.getElementById("blockCarouselTrack");
   if (!track || !blockCarouselState.items.length) return;
   paintCarouselTrack(track, track.scrollLeft);
+  syncPoolShareFindSelection();
 }
 
 function flashCarouselTag(tag) {
@@ -3512,8 +3956,19 @@ function initPortalSelectionGuard() {
   if (document.documentElement.dataset.selectionGuard === "1") return;
   document.documentElement.dataset.selectionGuard = "1";
   function shouldBlockSelection(target) {
-    return !!(target && target.closest && target.closest("button, .portal-tab-nav, .block-carousel"));
+    if (!target || !target.closest) return false;
+    if (target.closest(".pool-share-finds, .pool-share-find, .pool-share-name, .peer-census-peers")) return false;
+    return !!(target.closest("button, .portal-tab-nav, .block-carousel"));
   }
+  document.addEventListener("pointerdown", function (e) {
+    rememberViewHoldPointer(e.target);
+  }, true);
+  document.addEventListener("pointerup", function () {
+    viewHoldPointer = null;
+  }, true);
+  document.addEventListener("pointercancel", function () {
+    viewHoldPointer = null;
+  }, true);
   document.addEventListener("mousedown", function (e) {
     if (!e.shiftKey || !shouldBlockSelection(e.target)) return;
     e.preventDefault();
@@ -3698,7 +4153,7 @@ async function loadMetrics() {
           }),
           portalKpiHtml("Server node peers", formatNumber(d.connections || 0), {
             chart: "viewer.connections",
-            tool: peerCensusOpenButtonHtml(),
+            tool: isBlockvasePreviewHost() ? peerCensusOpenButtonHtml() : "",
           }),
         ],
         "portal-kpi-strip--in-board"
@@ -5198,7 +5653,7 @@ function renderPeerCensusPeers(nodes) {
     copyAll.dataset.lines = peers.map(peerCensusAddNodeLine).join("\n");
   }
   const hubPin = peerCensusHubPin((peerCensusState.data && peerCensusState.data.edges) || []);
-  withOverflowScroll(host, function () {
+  withLiveView(host, function () {
   body.innerHTML = peers
     .map(function (node) {
       const line = peerCensusAddNodeLine(node);
@@ -5344,6 +5799,7 @@ function setPeerCensusCluster(mode) {
 }
 
 function initPeerCensusPanel() {
+  if (!isBlockvasePreviewHost()) return;
   renderPeerCensusCounts({});
   syncPeerCensusClusterToggle();
   const closeBtn = document.getElementById("peerCensusClose");
