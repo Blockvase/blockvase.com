@@ -1548,28 +1548,27 @@ function datumPoolMinerKindLabel(row) {
 }
 
 function datumPoolDatumFeeNote(info) {
-  const until = formatDatumBps(info.fee_until_first_block_bps, "0%");
-  const after = formatDatumBps(info.fee_after_first_block_bps, "0.21%");
-  return until + " until the first pool block, then " + after + ".";
+  const fee = formatDatumBps(
+    info.fee_after_first_block_bps != null ? info.fee_after_first_block_bps : info.fee_bps,
+    "0.21%"
+  );
+  return "DATUM fee of " + fee + ".";
 }
 
 function datumPoolStratumFeeNote(info) {
   const fee = formatDatumBps(info.stratum_v1_fee_bps, "2.3%");
-  const keepRaw = Number(info.stratum_v1_miner_keep_percent);
-  const keep = Number.isFinite(keepRaw)
-    ? formatDatumPercent(keepRaw, Number.isInteger(keepRaw) ? 0 : 1)
-    : "97.7%";
   const rebate = formatDatumBps(info.stratum_v1_datum_rebate_bps, "2%");
   const leftover = formatDatumBps(info.stratum_v1_operator_bps, "0.3%");
   return (
+    "Public Stratum pays " +
     fee +
-    " of public work. You keep " +
-    keep +
-    ". " +
+    " of the Stratum share of a found block: " +
     rebate +
-    " rebates to DATUM; " +
+    " of that slice is rebated to DATUM miners, " +
     leftover +
-    " leftover."
+    " remainder goes to the pool. Public SV1 at pool.blockvase.com:3333; " +
+    fee +
+    "."
   );
 }
 
@@ -1739,7 +1738,7 @@ function datumPoolConnectCardsHtml(pool, info) {
 }
 
 const DATUM_POOL_EMPTY_NOTE =
-  "Empty (subsidy-only) finds freeze the share window and pay that snapshot after 100 confirmations. Fees from the find, not today's live fee: DATUM 0% then 0.21%; SV1 2.3% (2% DATUM rebate, 0.3% leftover); top 128; 546 sat floor.";
+  "Empty (subsidy-only) finds freeze the share window and pay that snapshot after 100 confirmations. Fees from the find, not today's live fee: DATUM 0.21%; SV1 2.3% of the Stratum share (2% rebated to DATUM miners, 0.3% remainder to the pool); top 128; 546 sat floor.";
 const DATUM_POOL_EMPTY_PATH = "/api/empty";
 let lastEmptyFindsDoc = null;
 let lastEmptyFindsKey = "";
@@ -2282,7 +2281,7 @@ function lightningBoardHtml(lightning) {
     "</h2></div>" +
     '<div class="datum-pool-intro">' +
     (notice
-      ? '<p class="muted-note datum-pool-note">' + escapeHtml(notice) + "</p>"
+      ? '<p class="datum-pool-lede">' + escapeHtml(notice) + "</p>"
       : "") +
     "</div></div>" +
     lightningMetricsHtml(lightning) +
