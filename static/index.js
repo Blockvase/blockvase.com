@@ -507,7 +507,7 @@ async function ensureMetricHistory() {
   if (metricHistory.loading) return metricHistory.loading;
   metricHistory.loading = (async function () {
     try {
-      const r = await blockvaseFetchWithTimeout("/metrics-history", 8000);
+      const r = await blockvaseFetchWithTimeout("/metrics-history", 20000);
       const d = await r.json();
       (d.viewer || []).forEach(function (point) {
         mergeMetricPoint("viewer", point);
